@@ -1,9 +1,8 @@
 package main
 
 import (
-	"testing"
-
 	"github.com/stretchr/testify/require"
+	"testing"
 )
 
 func TestNewEventID(t *testing.T) {
@@ -20,7 +19,7 @@ func TestNewEventID(t *testing.T) {
 	require.NoError(t, err, "generating event")
 	require.Equal(t, e.ID, id, "event id should match")
 
-	ok, err := ValidateEventID(e)
-	require.NoError(t, err, "validating event id")
-	require.True(t, ok)
+	require.NoError(t, VerifyEventID(e), "verifying event id")
+
+	require.NoError(t, VerifySignature(e), "verifying signature")
 }
