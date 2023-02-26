@@ -3,14 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+
 	"net/http"
 
-	// "github.com/OpenSourceOptimist/skyflow/internal/event"
+	"github.com/OpenSourceOptimist/skyflow/internal/log"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
 	"github.com/OpenSourceOptimist/skyflow/internal/store"
-
-	// "github.com/nbd-wtf/go-nostr"
 	"nhooyr.io/websocket"
 )
 
@@ -22,7 +20,7 @@ func main() {
 		c, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			fmt.Println(err.Error())
+			log.Error("error setting up websocket", "error", err)
 			return
 		}
 		defer c.Close(websocket.StatusInternalError, "thanks, bye")
@@ -33,13 +31,18 @@ func main() {
 			select {
 			case <-ctx.Done():
 				c.Close(websocket.StatusNormalClosure, "session cancelled")
+				log.Info("closing websocket")
 				return
 			case e := <-events:
-				s.Save(ctx, e)
+				err := s.Save(ctx, e)
+				if err != nil {
+					log.Error("saveing event", "error", err)
+				}
 			case req := <-requests:
 				requestCtx, requestCancelled := context.WithCancel(ctx)
 				defer requestCancelled()
 				if _, ok := ongoingSubscriptions[req.ID]; ok {
+					log.Error("request for ongoing supscription", "requestSubscriptionID", req.ID, "allSubsForSession", ongoingSubscriptions)
 					continue
 				}
 				ongoingSubscriptions[req.ID] = requestCancelled
@@ -48,16 +51,22 @@ func main() {
 					for {
 						select {
 						case <-requestCtx.Done():
+							log.Debug("request context cancelled", "subId", req.ID)
 							return
 						case e, ok := <-requestChan:
 							if !ok {
+								log.Debug("request event chan closed", "subId", req.ID)
 								return
 							}
 							eventMsg, err := json.Marshal([]any{"EVENT", e})
 							if err != nil {
+								log.Debug("marshalling eventMsg to send", "subId", req.ID, "error", err)
 								continue
 							}
-							c.Write(requestCtx, websocket.MessageText, eventMsg)
+							err = c.Write(requestCtx, websocket.MessageText, eventMsg)
+							if err != nil {
+								log.Error("writing to websocket", "error", err)
+							}
 						}
 					}
 				}()
@@ -69,7 +78,7 @@ func main() {
 				cancelSubscriptionFunc()
 			case err = <-errs:
 				if err != nil {
-					fmt.Println(err.Error())
+					log.Error("listening for websocket messages: " + err.Error())
 				}
 				continue
 			}

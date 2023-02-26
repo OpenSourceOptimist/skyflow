@@ -73,33 +73,39 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 		for {
 			socketMsgType, data, err := r.Read(ctx)
 			if err != nil {
-				errs <- err
+				errs <- fmt.Errorf("websocket read error: %w", err)
 				continue
 			}
 			if socketMsgType != websocket.MessageText {
 				errs <- fmt.Errorf("unexpected message type: %d", socketMsgType)
 				continue
 			}
-			var message [][]byte
+			var message []json.RawMessage
 			err = json.Unmarshal(data, &message)
 			if err != nil {
-				errs <- err
+				errs <- fmt.Errorf("unmarshal message: %w: %s", err, data)
 				continue
 			}
 			if len(message) == 0 {
 				errs <- fmt.Errorf("empty message")
 				continue
 			}
-			msgType := MessageType(string(message[0]))
+			var msgType MessageType
+			err = json.Unmarshal(message[0], &msgType)
+			if err != nil {
+				errs <- fmt.Errorf("unmarshalling message type: %w", err)
+				continue
+			}
+
 			if msgType == Event {
 				if len(message) != 2 {
-					errs <- fmt.Errorf("bad event message: %s", string(data))
+					errs <- fmt.Errorf("wrong event length: %s", string(data))
 					continue
 				}
 				var e event.Event
-				err := json.Unmarshal(message[0], &e)
+				err := json.Unmarshal(message[1], &e)
 				if err != nil {
-					errs <- fmt.Errorf("bad event message: %s", string(data))
+					errs <- fmt.Errorf("unmarshal event message: %s", string(data))
 					continue
 				}
 				go func(eventToSend event.Event) {
@@ -107,14 +113,19 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 				}(e)
 			} else if msgType == Request {
 				if len(message) != 3 {
-					errs <- fmt.Errorf("bad request message: %s", string(data))
+					errs <- fmt.Errorf("wrong event request lenght: %s", string(data))
 					continue
 				}
-				subID := SubscriptionID(message[1])
+				var subID SubscriptionID
+				err = json.Unmarshal(message[1], &subID)
+				if err != nil {
+					errs <- fmt.Errorf("unmatshal sub id: %w", err)
+					continue
+				}
 				var filter RequestFilter
 				err := json.Unmarshal(message[2], &filter)
 				if err != nil {
-					errs <- fmt.Errorf("bad request message: %s", string(data))
+					errs <- fmt.Errorf("unmarshal request message: %s", string(data))
 					continue
 				}
 				go func(id SubscriptionID, f RequestFilter) {
@@ -122,7 +133,7 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 				}(subID, filter)
 			} else if msgType == Close {
 				if len(message) != 2 {
-					errs <- fmt.Errorf("bad close message: %s", string(data))
+					errs <- fmt.Errorf("wrong close message lenght: %s", string(data))
 					continue
 				}
 				go func(subID SubscriptionID) {

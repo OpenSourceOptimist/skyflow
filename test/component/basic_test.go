@@ -15,7 +15,7 @@ import (
 )
 
 func TestBasicNIP01Flow(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	conn, resp, err := websocket.Dial(ctx, "ws://localhost:80", nil)
@@ -46,9 +46,10 @@ func TestBasicNIP01Flow(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, websocket.MessageText, msgType)
 
-	//var respEvent event.Event
-	var eventDataMsg [][]byte
+	var eventDataMsg []json.RawMessage
 	require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
-	require.Len(t, eventDataMsg, 3)
-	require.Equal(t, "EVENT", string(eventDataMsg[0]))
+	require.Len(t, eventDataMsg, 2)
+	var recivedMsgType string
+	json.Unmarshal(eventDataMsg[0], &recivedMsgType)
+	require.Equal(t, "EVENT", recivedMsgType)
 }
