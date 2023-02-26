@@ -75,14 +75,6 @@ type Event struct {
 	Sig       EventSignature `json:"sig"`
 }
 
-func Map[T any, K any](slice []T, f func(T) K) []K {
-	res := make([]K, 0, len(slice))
-	for _, t := range slice {
-		res = append(res, f(t))
-	}
-	return res
-}
-
 func NewEventID(pub PubKey, createdAt Timestamp, kind EventKind, tags []EventTag, content string) (EventID, error) {
 	bytes, err := json.Marshal([]interface{}{
 		0,
