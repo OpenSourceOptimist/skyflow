@@ -92,6 +92,18 @@ func NewEventID(pub PubKey, createdAt Timestamp, kind EventKind, tags []EventTag
 	return EventID(hex.EncodeToString(eventIDByteArray[:])), nil
 }
 
+func VerifyEvent(e Event) error {
+	err := VerifyEventID(e)
+	if err != nil {
+		return fmt.Errorf("event id verification failed: %w", err)
+	}
+	err = VerifySignature(e)
+	if err != nil {
+		return fmt.Errorf("event signature verification failed: %w", err)
+	}
+	return nil
+}
+
 func VerifyEventID(e Event) error {
 	id, err := NewEventID(e.PubKey, e.CreatedAt, e.Kind, e.Tags, e.Content)
 	if err != nil {
@@ -112,10 +124,6 @@ func VerifySignature(e Event) error {
 	signature, err := e.Sig.BIP340Secp256k1()
 	if err != nil {
 		return fmt.Errorf("signature parsing: %w", err)
-	}
-
-	if err := VerifyEventID(e); err != nil {
-		return fmt.Errorf("event id verification: %w", err)
 	}
 
 	eventIDBytes, err := e.ID.Bytes()
