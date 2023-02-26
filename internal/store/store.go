@@ -27,6 +27,7 @@ func (s *Store) Get(ctx context.Context, filter messages.RequestFilter) <-chan e
 				continue
 			}
 		}
+		s.data = nil
 	}()
 	return res
 }

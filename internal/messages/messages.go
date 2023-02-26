@@ -108,6 +108,11 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 					errs <- fmt.Errorf("unmarshal event message: %s", string(data))
 					continue
 				}
+				err = event.VerifyEventID(e)
+				if err != nil {
+					errs <- fmt.Errorf("event id verification: %w", err)
+					continue
+				}
 				go func(eventToSend event.Event) {
 					events <- eventToSend
 				}(e)
