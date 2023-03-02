@@ -9,9 +9,12 @@ import (
 
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+var clearMongo func()
 
 func TestMain(m *testing.M) {
 	fmt.Println("starting component test")
@@ -55,6 +58,7 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		fmt.Println(err.Error())
 	}
+	clearMongo = func() { mongoClient.Database("skyflow").Collection("events").DeleteMany(ctx, primitive.M{}) }
 
 	fmt.Println("building and starting skyflow container")
 	pool.RemoveContainerByName("test_skyflow")

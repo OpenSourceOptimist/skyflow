@@ -27,7 +27,11 @@ func (s *Store) Save(ctx context.Context, e event.Event) error {
 func (s *Store) Get(ctx context.Context, filter messages.RequestFilter) <-chan event.Event {
 	res := make(chan event.Event)
 	go func() {
-		cursor, err := s.EventCol.Find(ctx, primitive.M{})
+		cursor, err := s.EventCol.Find(ctx, primitive.M{
+			"$or": primitive.A{
+				primitive.M{"id": primitive.M{"$in": filter.IDs}},
+			},
+		})
 		if err != nil {
 			return //TODO: exponential backoff
 		}

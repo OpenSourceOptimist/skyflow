@@ -14,6 +14,7 @@ import (
 )
 
 func TestVerificationEventID(t *testing.T) {
+	defer clearMongo()
 	ctx := context.Background()
 	conn, _, _ := websocket.Dial(ctx, "ws://localhost:80", nil)
 	testEvent := event.Event{
@@ -40,6 +41,7 @@ func TestVerificationEventID(t *testing.T) {
 }
 
 func TestVerificationSignature(t *testing.T) {
+	defer clearMongo()
 	ctx := context.Background()
 	conn, _, _ := websocket.Dial(ctx, "ws://localhost:80", nil)
 	testEvent := event.Event{
