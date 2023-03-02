@@ -3,18 +3,33 @@ package main
 import (
 	"context"
 	"encoding/json"
-
 	"net/http"
+	"os"
+	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/log"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
 	"github.com/OpenSourceOptimist/skyflow/internal/store"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 	"nhooyr.io/websocket"
 )
 
 func main() {
-
-	s := &store.Store{}
+	mongoUri := os.Getenv("MONGODB_URI")
+	log.Info(mongoUri)
+	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoUri))
+	if err != nil {
+		panic(err)
+	}
+	defer func() { _ = client.Disconnect(context.Background()) }()
+	s := &store.Store{EventCol: client.Database("skyflow").Collection("events")}
+	ctx := context.Background()
+	for err != nil {
+		err := client.Ping(ctx, nil)
+		log.Error("mongo ping error: " + err.Error())
+		time.Sleep(time.Second)
+	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, nil)
@@ -28,17 +43,20 @@ func main() {
 		ongoingSubscriptions := make(map[messages.SubscriptionID]context.CancelFunc)
 		events, requests, closes, errs := messages.ListenForMessages(ctx, c)
 		for {
+			log.Debug("listening for messages")
 			select {
 			case <-ctx.Done():
 				c.Close(websocket.StatusNormalClosure, "session cancelled")
 				log.Info("closing websocket")
 				return
 			case e := <-events:
+				log.Debug("recived event")
 				err := s.Save(ctx, e)
 				if err != nil {
 					log.Error("saveing event", "error", err)
 				}
 			case req := <-requests:
+				log.Debug("recived request")
 				requestCtx, requestCancelled := context.WithCancel(ctx)
 				defer requestCancelled()
 				if _, ok := ongoingSubscriptions[req.ID]; ok {
@@ -54,6 +72,7 @@ func main() {
 							log.Debug("request context cancelled", "subId", req.ID)
 							return
 						case e, ok := <-requestChan:
+							log.Debug("request channel closed")
 							if !ok {
 								log.Debug("request event chan closed", "subId", req.ID)
 								return
@@ -71,12 +90,14 @@ func main() {
 					}
 				}()
 			case close := <-closes:
+				log.Debug("recived close")
 				cancelSubscriptionFunc, ok := ongoingSubscriptions[close.Subscription]
 				if !ok {
 					continue
 				}
 				cancelSubscriptionFunc()
 			case err = <-errs:
+				log.Debug("recived error")
 				if err != nil {
 					log.Error("listening for websocket messages: " + err.Error())
 				}
