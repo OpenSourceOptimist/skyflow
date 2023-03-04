@@ -92,6 +92,16 @@ func TestBasicFiltering(t *testing.T) {
 			filter:           messages.RequestFilter{Authors: []event.PubKey{validEvent.PubKey}},
 			expectingMessage: true,
 		},
+		{
+			name:             "kind filter misses",
+			filter:           messages.RequestFilter{Kinds: []event.EventKind{24343}},
+			expectingMessage: false,
+		},
+		{
+			name:             "kind filter matches",
+			filter:           messages.RequestFilter{Kinds: []event.EventKind{validEvent.Kind}},
+			expectingMessage: true,
+		},
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
