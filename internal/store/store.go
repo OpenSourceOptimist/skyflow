@@ -26,12 +26,15 @@ func (s *Store) Save(ctx context.Context, e event.Event) error {
 
 func (s *Store) Get(ctx context.Context, filter messages.RequestFilter) <-chan event.Event {
 	res := make(chan event.Event)
+	var filters []primitive.M
+	if len(filter.IDs) > 0 {
+		filters = append(filters, primitive.M{"id": primitive.M{"$in": filter.IDs}})
+	}
+	if len(filter.Authors) > 0 {
+		filters = append(filters, primitive.M{"pubkey": primitive.M{"$in": filter.Authors}})
+	}
 	go func() {
-		cursor, err := s.EventCol.Find(ctx, primitive.M{
-			"$or": primitive.A{
-				primitive.M{"id": primitive.M{"$in": filter.IDs}},
-			},
-		})
+		cursor, err := s.EventCol.Find(ctx, primitive.M{"$or": filters})
 		if err != nil {
 			return //TODO: exponential backoff
 		}
