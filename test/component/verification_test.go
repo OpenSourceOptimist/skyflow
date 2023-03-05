@@ -17,6 +17,7 @@ func TestVerificationEventID(t *testing.T) {
 	defer clearMongo()
 	ctx := context.Background()
 	conn, _, _ := websocket.Dial(ctx, "ws://localhost:80", nil)
+	defer conn.Close(websocket.StatusGoingAway, "bye")
 	testEvent := event.Event{
 		ID:        event.EventID("d8dd5eb23b747e16f8d0212d53032ea2a7cadef53837e5a6c66142843fcb9027"), // modified in a couple of places
 		Kind:      event.EventKind(1),
@@ -44,6 +45,7 @@ func TestVerificationSignature(t *testing.T) {
 	defer clearMongo()
 	ctx := context.Background()
 	conn, _, _ := websocket.Dial(ctx, "ws://localhost:80", nil)
+	defer conn.Close(websocket.StatusGoingAway, "bye")
 	testEvent := event.Event{
 		ID:        event.EventID("d7dd5eb3ab747e16f8d0212d53032ea2a7cadef53837e5a6c66d42849fcb9027"),
 		Kind:      event.EventKind(1),
