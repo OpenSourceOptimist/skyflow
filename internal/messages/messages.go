@@ -80,13 +80,19 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 			}
 			socketMsgType, data, err := r.Read(ctx)
 			if err != nil {
-				errs <- fmt.Errorf("websocket read error: %w", err)
 				if strings.Contains(err.Error(), "WebSocket closed") {
 					return
 				}
 				if strings.Contains(err.Error(), "connection reset by peer") {
 					return
 				}
+				if strings.Contains(err.Error(), "StatusGoingAway") {
+					return
+				}
+				if strings.Contains(err.Error(), "EOF") {
+					return
+				}
+				errs <- fmt.Errorf("websocket read error: %w", err)
 				// TODO: this should probably be exponential in some smart way
 				time.Sleep(100 * time.Millisecond)
 				continue
