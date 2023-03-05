@@ -10,12 +10,14 @@ import (
 	"github.com/OpenSourceOptimist/skyflow/internal/log"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
 	"github.com/OpenSourceOptimist/skyflow/internal/store"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"nhooyr.io/websocket"
 )
 
 func main() {
+	logrus.SetLevel(logrus.InfoLevel)
 	mongoUri := os.Getenv("MONGODB_URI")
 	log.Info(mongoUri)
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoUri))
@@ -32,12 +34,14 @@ func main() {
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Debug("handling new request")
 		c, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			log.Error("error setting up websocket", "error", err)
 			return
 		}
+		log.Debug("request upgraded to websocket")
 		defer c.Close(websocket.StatusInternalError, "thanks, bye")
 		ctx := r.Context()
 		ongoingSubscriptions := make(map[messages.SubscriptionID]context.CancelFunc)
@@ -84,7 +88,7 @@ func main() {
 							}
 							err = c.Write(requestCtx, websocket.MessageText, eventMsg)
 							if err != nil {
-								log.Error("writing to websocket", "error", err)
+								log.Error("request attemp writing to websocket", "error", err)
 							}
 						}
 					}
@@ -105,5 +109,5 @@ func main() {
 			}
 		}
 	})
-	http.ListenAndServe(":80", handler)
+	log.Info("server stopping: " + http.ListenAndServe(":80", handler).Error())
 }
