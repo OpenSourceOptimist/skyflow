@@ -75,12 +75,8 @@ func main() {
 						case <-requestCtx.Done():
 							log.Debug("request context cancelled", "subId", req.ID)
 							return
-						case e, ok := <-requestChan:
+						case e := <-requestChan:
 							log.Debug("request channel closed")
-							if !ok {
-								log.Debug("request event chan closed", "subId", req.ID)
-								return
-							}
 							eventMsg, err := json.Marshal([]any{"EVENT", e})
 							if err != nil {
 								log.Debug("marshalling eventMsg to send", "subId", req.ID, "error", err)
