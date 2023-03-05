@@ -9,6 +9,7 @@ import (
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
+	"github.com/sirupsen/logrus"
 	"nhooyr.io/websocket"
 )
 
@@ -80,6 +81,7 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 			}
 			socketMsgType, data, err := r.Read(ctx)
 			if err != nil {
+				logrus.Debug("read error: " + err.Error())
 				if strings.Contains(err.Error(), "WebSocket closed") {
 					return
 				}

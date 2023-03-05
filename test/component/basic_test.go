@@ -127,3 +127,15 @@ func TestBasicFiltering(t *testing.T) {
 		})
 	}
 }
+
+func TestClosing(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, closer := newSocket(ctx, t)
+	defer closer()
+	subID := requestSub(ctx, t, messages.RequestFilter{}, conn)
+	cancelSub(ctx, t, subID, conn)
+	publish(ctx, t, validEvent, conn)
+	requestSub(ctx, t, messages.RequestFilter{}, conn)
+	require.Equal(t, validEvent.ID, readEvent(ctx, t, conn).ID)
+}
