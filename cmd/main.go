@@ -7,17 +7,16 @@ import (
 	"os"
 	"time"
 
-	"github.com/OpenSourceOptimist/skyflow/internal/log"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
 	"github.com/OpenSourceOptimist/skyflow/internal/store"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"nhooyr.io/websocket"
 )
 
 func main() {
-	logrus.SetLevel(logrus.InfoLevel)
+	log.SetLevel(log.InfoLevel)
 	mongoUri := os.Getenv("MONGODB_URI")
 	log.Info(mongoUri)
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoUri))
