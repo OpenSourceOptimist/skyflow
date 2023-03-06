@@ -6,5 +6,5 @@ build: cmd internal
 test-component:
 	go test -c ./test/component/...
 
-make test-unit:
+test-unit:
 	go test ./internal/...
