@@ -30,10 +30,11 @@ func TestVerificationEventID(t *testing.T) {
 
 	// Writing a bad event should work
 	eventMsg, _ := json.Marshal([]any{"EVENT", testEvent})
-	conn.Write(ctx, websocket.MessageText, eventMsg)
+
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, eventMsg))
 	// But should not show up in a request
 	reqBytes, _ := json.Marshal([]interface{}{"REQ", uuid.NewString(), messages.RequestFilter{IDs: []event.EventID{testEvent.ID}}})
-	conn.Write(ctx, websocket.MessageText, reqBytes)
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 	ctx, cancelFunc := context.WithTimeout(ctx, time.Second)
 	defer cancelFunc()
 	_, readBytes, err := conn.Read(ctx)
@@ -58,10 +59,10 @@ func TestVerificationSignature(t *testing.T) {
 
 	// Writing a bad event should work
 	eventMsg, _ := json.Marshal([]any{"EVENT", testEvent})
-	conn.Write(ctx, websocket.MessageText, eventMsg)
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, eventMsg))
 	// But should not show up in a request
 	reqBytes, _ := json.Marshal([]interface{}{"REQ", uuid.NewString(), messages.RequestFilter{IDs: []event.EventID{testEvent.ID}}})
-	conn.Write(ctx, websocket.MessageText, reqBytes)
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 	ctx, cancelFunc := context.WithTimeout(ctx, time.Second)
 	defer cancelFunc()
 	_, readBytes, err := conn.Read(ctx)

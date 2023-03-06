@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 
 	fmt.Println("starting mongo")
 
-	pool.RemoveContainerByName("test_db")
+	_ = pool.RemoveContainerByName("test_db")
 	mongoResource, err := pool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       "test_db",
@@ -58,10 +58,10 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		fmt.Println(err.Error())
 	}
-	clearMongo = func() { mongoClient.Database("skyflow").Collection("events").DeleteMany(ctx, primitive.M{}) }
+	clearMongo = func() { _, _ = mongoClient.Database("skyflow").Collection("events").DeleteMany(ctx, primitive.M{}) }
 
 	fmt.Println("building and starting skyflow container")
-	pool.RemoveContainerByName("test_skyflow")
+	_ = pool.RemoveContainerByName("test_skyflow")
 	_, err = pool.BuildAndRunWithOptions("./Containerfile", &dockertest.RunOptions{
 		Name: "test_skyflow",
 		PortBindings: map[docker.Port][]docker.PortBinding{

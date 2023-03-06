@@ -45,10 +45,10 @@ func readEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) event.Ev
 	require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
 	require.Len(t, eventDataMsg, 2)
 	var recivedMsgType string
-	json.Unmarshal(eventDataMsg[0], &recivedMsgType)
+	require.NoError(t, json.Unmarshal(eventDataMsg[0], &recivedMsgType))
 	require.Equal(t, "EVENT", recivedMsgType)
 	var resultEvent event.Event
-	json.Unmarshal(eventDataMsg[1], &resultEvent)
+	require.NoError(t, json.Unmarshal(eventDataMsg[1], &resultEvent))
 	require.NoError(t, event.VerifyEvent(resultEvent), "verifying validity of recived event")
 	return resultEvent
 }

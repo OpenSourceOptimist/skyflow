@@ -51,7 +51,7 @@ func TestBasicNIP01Flow(t *testing.T) {
 	require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
 	require.Len(t, eventDataMsg, 2)
 	var recivedMsgType string
-	json.Unmarshal(eventDataMsg[0], &recivedMsgType)
+	require.NoError(t, json.Unmarshal(eventDataMsg[0], &recivedMsgType))
 	require.Equal(t, "EVENT", recivedMsgType)
 }
 

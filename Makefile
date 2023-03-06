@@ -8,3 +8,6 @@ test-component:
 
 test-unit:
 	go test ./internal/...
+
+lint:
+	golangci-lint run
