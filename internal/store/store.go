@@ -37,10 +37,26 @@ func (s *Store) Get(ctx context.Context, filter messages.RequestFilter) <-chan e
 		if len(filter.Kinds) > 0 {
 			filters = append(filters, primitive.M{"kind": primitive.M{"$in": filter.Kinds}})
 		}
+
+		var createdAtConstraints []primitive.M
+		if filter.Since != 0 {
+			createdAtConstraints = append(createdAtConstraints, primitive.M{"created_at": primitive.M{"$gt": filter.Since}})
+		}
+
 		query := primitive.M{}
-		if len(filters) > 0 {
+		if len(filters) > 0 && len(createdAtConstraints) == 0 {
 			query = primitive.M{"$or": filters}
 		}
+		if len(filters) == 0 && len(createdAtConstraints) > 0 {
+			query = primitive.M{"$and": createdAtConstraints}
+		}
+		if len(filters) > 0 && len(createdAtConstraints) > 0 {
+			query = primitive.M{"$and": primitive.A{
+				primitive.M{"$and": createdAtConstraints},
+				primitive.M{"$or": filters},
+			}}
+		}
+
 		cursor, err := s.EventCol.Find(ctx, query)
 		if err != nil {
 			return //TODO: exponential backoff

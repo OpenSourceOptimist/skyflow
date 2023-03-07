@@ -102,6 +102,16 @@ func TestBasicFiltering(t *testing.T) {
 			filter:           messages.RequestFilter{Kinds: []event.EventKind{validEvent.Kind}},
 			expectingMessage: true,
 		},
+		{
+			name:             "since filter matches",
+			filter:           messages.RequestFilter{Since: validEvent.CreatedAt - 1},
+			expectingMessage: true,
+		},
+		{
+			name:             "since filter does not matche",
+			filter:           messages.RequestFilter{Since: validEvent.CreatedAt + 1},
+			expectingMessage: false,
+		},
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -66,13 +66,13 @@ func (sig EventSignature) BIP340Secp256k1() (schnorr.Signature, error) {
 }
 
 type Event struct {
-	ID        EventID        `json:"id"`
-	PubKey    PubKey         `json:"pubkey"`
-	CreatedAt Timestamp      `json:"created_at"`
-	Kind      EventKind      `json:"kind"`
-	Tags      []EventTag     `json:"tags"`
-	Content   string         `json:"content"`
-	Sig       EventSignature `json:"sig"`
+	ID        EventID        `json:"id" bson:"id"`
+	PubKey    PubKey         `json:"pubkey" bson:"pubkey"`
+	CreatedAt Timestamp      `json:"created_at" bson:"created_at"`
+	Kind      EventKind      `json:"kind" bson:"kind"`
+	Tags      []EventTag     `json:"tags" bson:"tags"`
+	Content   string         `json:"content" bson:"content"`
+	Sig       EventSignature `json:"sig" bson:"sig"`
 }
 
 func NewEventID(pub PubKey, createdAt Timestamp, kind EventKind, tags []EventTag, content string) (EventID, error) {
