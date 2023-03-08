@@ -49,7 +49,7 @@ func TestBasicNIP01Flow(t *testing.T) {
 
 	var eventDataMsg []json.RawMessage
 	require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
-	require.Len(t, eventDataMsg, 2)
+	require.Len(t, eventDataMsg, 3)
 	var recivedMsgType string
 	require.NoError(t, json.Unmarshal(eventDataMsg[0], &recivedMsgType))
 	require.Equal(t, "EVENT", recivedMsgType)
@@ -66,13 +66,16 @@ var validEvent = event.Event{
 }
 
 func TestClosing(t *testing.T) {
+	defer clearMongo()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	conn, closer := newSocket(ctx, t)
 	defer closer()
-	subID := requestSub(ctx, t, messages.RequestFilter{}, conn)
-	cancelSub(ctx, t, subID, conn)
+	subID1 := requestSub(ctx, t, messages.RequestFilter{}, conn)
+	cancelSub(ctx, t, subID1, conn)
 	publish(ctx, t, validEvent, conn)
-	requestSub(ctx, t, messages.RequestFilter{}, conn)
-	require.Equal(t, validEvent.ID, readEvent(ctx, t, conn).ID)
+	subID2 := requestSub(ctx, t, messages.RequestFilter{}, conn)
+	sub, e := readEvent(ctx, t, conn)
+	require.Equal(t, subID2, sub)
+	require.Equal(t, validEvent.ID, e.ID)
 }

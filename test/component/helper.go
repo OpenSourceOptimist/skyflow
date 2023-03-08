@@ -36,21 +36,23 @@ func requestSub(ctx context.Context, t *testing.T, filter messages.RequestFilter
 	return messages.SubscriptionID(subID)
 }
 
-func readEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) event.Event {
+func readEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) (messages.SubscriptionID, event.Event) {
 	msgType, responseBytes, err := conn.Read(ctx)
 	require.NoError(t, err)
 	require.Equal(t, websocket.MessageText, msgType)
 
 	var eventDataMsg []json.RawMessage
 	require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
-	require.Len(t, eventDataMsg, 2)
+	require.Len(t, eventDataMsg, 3)
 	var recivedMsgType string
 	require.NoError(t, json.Unmarshal(eventDataMsg[0], &recivedMsgType))
 	require.Equal(t, "EVENT", recivedMsgType)
+	var subscriptionID messages.SubscriptionID
+	require.NoError(t, json.Unmarshal(eventDataMsg[1], &subscriptionID))
 	var resultEvent event.Event
-	require.NoError(t, json.Unmarshal(eventDataMsg[1], &resultEvent))
+	require.NoError(t, json.Unmarshal(eventDataMsg[2], &resultEvent))
 	require.NoError(t, event.VerifyEvent(resultEvent), "verifying validity of recived event")
-	return resultEvent
+	return subscriptionID, resultEvent
 }
 
 func cancelSub(ctx context.Context, t *testing.T, subID messages.SubscriptionID, conn *websocket.Conn) {

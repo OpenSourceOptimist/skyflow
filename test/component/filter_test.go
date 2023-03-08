@@ -116,7 +116,7 @@ func TestFiltering(t *testing.T) {
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			//defer clearMongo()
+			defer clearMongo()
 			fmt.Println(tc.name)
 			ctx := context.Background()
 			relay, err := nostr.RelayConnect(ctx, "ws://localhost:80")
