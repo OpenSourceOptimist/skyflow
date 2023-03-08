@@ -67,27 +67,8 @@ func main() {
 					continue
 				}
 				ongoingSubscriptions[req.ID] = requestCancelled
-				requestChan := s.Get(requestCtx, req.Filter)
-				go func() {
-					for {
-						select {
-						case <-requestCtx.Done():
-							log.Debug("request context cancelled", "subId", req.ID)
-							return
-						case e := <-requestChan:
-							log.Debug("request channel closed")
-							eventMsg, err := json.Marshal([]any{"EVENT", e})
-							if err != nil {
-								log.Debug("marshalling eventMsg to send", "subId", req.ID, "error", err)
-								continue
-							}
-							err = c.Write(requestCtx, websocket.MessageText, eventMsg)
-							if err != nil {
-								log.Error("request attemp writing to websocket", "error", err)
-							}
-						}
-					}
-				}()
+				foundEvents := s.Get(requestCtx, req.Filter)
+				go WriteFoundEventsToConnection(requestCtx, req.ID, foundEvents, conn)
 			case close := <-closes:
 				log.Debug("recived close")
 				cancelSubscriptionFunc, ok := ongoingSubscriptions[close.Subscription]
@@ -105,4 +86,25 @@ func main() {
 		}
 	})
 	log.Info("server stopping: " + http.ListenAndServe(":80", handler).Error())
+
+func WriteFoundEventsToConnection(ctx context.Context, sub messages.SubscriptionID, foundEvents <-chan event.Event, connection *websocket.Conn) {
+	for {
+		select {
+		case <-ctx.Done():
+			logrus.Debug("request context cancelled", "subId", sub)
+			return
+		case e := <-foundEvents:
+			logrus.Debug("got event on request channel: ", e.ID)
+			eventMsg, err := json.Marshal([]any{"EVENT", sub, e})
+			if err != nil {
+				logrus.Debug("marshalling eventMsg to send", "subId", sub, "error", err)
+				continue
+			}
+			err = connection.Write(ctx, websocket.MessageText, eventMsg)
+			if err != nil {
+				logrus.Error("request attemp writing to websocket", "error", err)
+			}
+			logrus.Debug("event written on channel: ", string(eventMsg))
+		}
+	}
 }
