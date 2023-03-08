@@ -7,18 +7,20 @@ import (
 	"os"
 	"time"
 
+	"github.com/OpenSourceOptimist/skyflow/internal/event"
+	"github.com/OpenSourceOptimist/skyflow/internal/log"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
 	"github.com/OpenSourceOptimist/skyflow/internal/store"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"nhooyr.io/websocket"
 )
 
 func main() {
-	log.SetLevel(log.InfoLevel)
+	logrus.SetLevel(logrus.DebugLevel)
 	mongoUri := os.Getenv("MONGODB_URI")
-	log.Info(mongoUri)
+	logrus.Info(mongoUri)
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoUri))
 	if err != nil {
 		panic(err)
@@ -28,64 +30,68 @@ func main() {
 	ctx := context.Background()
 	for err != nil {
 		err := client.Ping(ctx, nil)
-		log.Error("mongo ping error: " + err.Error())
+		logrus.Error("mongo ping error: " + err.Error())
 		time.Sleep(time.Second)
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Debug("handling new request")
-		c, err := websocket.Accept(w, r, nil)
+		logrus.Debug("handling new request")
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Error("error setting up websocket", "error", err)
+			logrus.Error("error setting up websocket", "error", err)
 			return
 		}
-		log.Debug("request upgraded to websocket")
-		defer c.Close(websocket.StatusInternalError, "thanks, bye")
+		logrus.Debug("request upgraded to websocket")
+		defer func() {
+			logrus.Debug("websocket closed")
+			conn.Close(websocket.StatusInternalError, "thanks, bye")
+		}()
 		ctx := r.Context()
 		ongoingSubscriptions := make(map[messages.SubscriptionID]context.CancelFunc)
-		events, requests, closes, errs := messages.ListenForMessages(ctx, c)
+		events, requests, closes, errs := messages.ListenForMessages(ctx, conn)
 		for {
-			log.Debug("listening for messages")
+			logrus.Debug("listening for messages")
 			select {
 			case <-ctx.Done():
-				c.Close(websocket.StatusNormalClosure, "session cancelled")
-				log.Info("closing websocket")
+				conn.Close(websocket.StatusNormalClosure, "session cancelled")
+				logrus.Info("closing websocket")
 				return
 			case e := <-events:
-				log.Debug("recived event")
+				logrus.Debug("recived event: ", log.Marshall(e))
 				err := s.Save(ctx, e)
 				if err != nil {
-					log.Error("saveing event", "error", err)
+					logrus.Error("saveing event", "error", err)
 				}
 			case req := <-requests:
-				log.Debug("recived request")
+				logrus.Debug("recived request: ", log.Marshall(req))
 				requestCtx, requestCancelled := context.WithCancel(ctx)
 				defer requestCancelled()
 				if _, ok := ongoingSubscriptions[req.ID]; ok {
-					log.Error("request for ongoing supscription", "requestSubscriptionID", req.ID, "allSubsForSession", ongoingSubscriptions)
+					logrus.Error("request for ongoing supscription", "requestSubscriptionID", req.ID, "allSubsForSession", ongoingSubscriptions)
 					continue
 				}
 				ongoingSubscriptions[req.ID] = requestCancelled
 				foundEvents := s.Get(requestCtx, req.Filter)
 				go WriteFoundEventsToConnection(requestCtx, req.ID, foundEvents, conn)
 			case close := <-closes:
-				log.Debug("recived close")
+				logrus.Debug("recived close: ", log.Marshall(close))
 				cancelSubscriptionFunc, ok := ongoingSubscriptions[close.Subscription]
 				if !ok {
 					continue
 				}
 				cancelSubscriptionFunc()
 			case err = <-errs:
-				log.Debug("recived error")
+				logrus.Debug("recived error: ", err)
 				if err != nil {
-					log.Error("listening for websocket messages: " + err.Error())
+					logrus.Error("listening for websocket messages: " + err.Error())
 				}
 				continue
 			}
 		}
 	})
-	log.Info("server stopping: " + http.ListenAndServe(":80", handler).Error())
+	logrus.Info("server stopping: " + http.ListenAndServe(":80", handler).Error())
+}
 
 func WriteFoundEventsToConnection(ctx context.Context, sub messages.SubscriptionID, foundEvents <-chan event.Event, connection *websocket.Conn) {
 	for {
