@@ -1,7 +1,6 @@
 package slice
 
 import (
-	"fmt"
 	"time"
 )
 
@@ -22,16 +21,14 @@ func Contains[T comparable](slice []T, element T) bool {
 	return false
 }
 
-func ReadSlice[T any](c chan T, lenght int, timeout time.Duration) ([]T, error) {
-	res := make([]T, 0, lenght)
-	timedout := time.After(timeout)
-	for i := 0; i < lenght; i++ {
+func ReadSlice[T any](c chan T, timeout time.Duration) []T {
+	res := make([]T, 0)
+	for {
 		select {
 		case t := <-c:
 			res = append(res, t)
-		case <-timedout:
-			return nil, fmt.Errorf("timed out waiting for result %d out of %d results expected from channel", i+1, lenght)
+		case <-time.After(timeout):
+			return res
 		}
 	}
-	return res, nil
 }

@@ -107,11 +107,11 @@ func TestFiltering(t *testing.T) {
 		filter          nostr.Filter
 		recivedEventIDs []string
 	}{
-		{
+		{ // NIP01: When limit: n is present it is assumed that the events returned in the initial query will be the latest n events.
 			name:            "Enfoce limit, sorted on created_at",
 			allEvents:       []nostr.Event{createdAt100, createdAt200, createdAt300, createdAt400},
 			filter:          nostr.Filter{Limit: 3},
-			recivedEventIDs: []string{createdAt100.ID, createdAt200.ID, createdAt300.ID},
+			recivedEventIDs: []string{createdAt200.ID, createdAt300.ID, createdAt400.ID},
 		},
 	}
 	for _, tc := range testcases {
@@ -127,7 +127,7 @@ func TestFiltering(t *testing.T) {
 			}
 			fmt.Println("subscribing")
 			sub := relay.Subscribe(ctx, nostr.Filters{tc.filter})
-			reciviedEvents, err := slice.ReadSlice(sub.Events, len(tc.recivedEventIDs), time.Second)
+			reciviedEvents := slice.ReadSlice(sub.Events, 500*time.Millisecond)
 			require.NoError(t, err, "retriving events")
 			recivedEventIDs := slice.Map(reciviedEvents, func(e *nostr.Event) string { return e.ID })
 			require.Equal(t, tc.recivedEventIDs, recivedEventIDs)
