@@ -60,7 +60,14 @@ func (s *Store) Get(ctx context.Context, filter messages.RequestFilter) <-chan e
 			}}
 		}
 		logrus.Debug("Store.Get find query: ", query)
-		cursor, err := s.EventCol.Find(ctx, query)
+		cursor, err := s.EventCol.Find(
+			ctx,
+			query,
+			options.Find().
+				SetLimit(filter.Limit).
+				SetSort(primitive.D{{Key: "created_at", Value: -1}}),
+		)
+
 		if err != nil {
 			logrus.Error("mongo find operation: ", err)
 			return //TODO: exponential backoff?
