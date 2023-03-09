@@ -8,8 +8,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type PubKey string
+
+func (priv PubKey) String() string {
+	return string(priv)
+}
+
+type PrivKey string
+
+func (priv PrivKey) String() string {
+	return string(priv)
+}
+
 type EventOptions struct {
-	PrivKey   string
+	PrivKey   PrivKey
 	CreatedAt time.Time
 	Kind      int
 	Tags      nostr.Tags
@@ -19,9 +31,9 @@ type EventOptions struct {
 func NewSignedEvent(t *testing.T, opts EventOptions) nostr.Event {
 	privKey := opts.PrivKey
 	if privKey == "" {
-		privKey = nostr.GeneratePrivateKey()
+		privKey = PrivKey(nostr.GeneratePrivateKey())
 	}
-	pubKey, err := nostr.GetPublicKey(privKey)
+	pubKey, err := nostr.GetPublicKey(privKey.String())
 	require.NoError(t, err, "generating pubkey")
 	e := &nostr.Event{
 		PubKey:    pubKey,
@@ -30,6 +42,13 @@ func NewSignedEvent(t *testing.T, opts EventOptions) nostr.Event {
 		Tags:      opts.Tags,
 		Content:   opts.Content,
 	}
-	require.NoError(t, e.Sign(privKey), "signing test event")
+	require.NoError(t, e.Sign(privKey.String()), "signing test event")
 	return *e
+}
+
+func NewKeyPair(t *testing.T) (PrivKey, PubKey) {
+	priv := nostr.GeneratePrivateKey()
+	pub, err := nostr.GetPublicKey(priv)
+	require.NoError(t, err)
+	return PrivKey(priv), PubKey(pub)
 }

@@ -2,7 +2,6 @@ package component
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -101,6 +100,10 @@ func TestFiltering(t *testing.T) {
 	createdAt200 := NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(200, 0)})
 	createdAt300 := NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(300, 0)})
 	createdAt400 := NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(400, 0)})
+	_, pub1 := NewKeyPair(t)
+	_, pub2 := NewKeyPair(t)
+	referencingPub1 := NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub1.String(), ""}}})
+	referencingPub2 := NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub2.String(), ""}}})
 	testcases := []struct {
 		name            string
 		allEvents       []nostr.Event
@@ -113,11 +116,16 @@ func TestFiltering(t *testing.T) {
 			filter:          nostr.Filter{Limit: 3},
 			recivedEventIDs: []string{createdAt400.ID, createdAt300.ID, createdAt200.ID},
 		},
+		{
+			name:            "Filter on pubkeys referenced in p tag",
+			allEvents:       []nostr.Event{referencingPub1, referencingPub2, createdAt100},
+			filter:          nostr.Filter{Tags: nostr.TagMap{"p": []string{pub1.String()}}},
+			recivedEventIDs: []string{referencingPub1.ID},
+		},
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			defer clearMongo()
-			fmt.Println(tc.name)
 			ctx := context.Background()
 			relay, err := nostr.RelayConnect(ctx, "ws://localhost:80")
 			require.NoError(t, err, "relay connecting")
@@ -125,7 +133,6 @@ func TestFiltering(t *testing.T) {
 			for _, e := range tc.allEvents {
 				require.Equal(t, "success", relay.Publish(ctx, e).String())
 			}
-			fmt.Println("subscribing")
 			sub := relay.Subscribe(ctx, nostr.Filters{tc.filter})
 			reciviedEvents := slice.ReadSlice(sub.Events, 500*time.Millisecond)
 			require.NoError(t, err, "retriving events")
