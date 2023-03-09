@@ -68,7 +68,7 @@ func (s *Store) Get(ctx context.Context, filter messages.RequestFilter) <-chan e
 		}
 		cursor, err := s.EventCol.Find(ctx, query, findOpts)
 		if err != nil {
-			logrus.Error("mongo find operation: ", err)
+			logrus.Error("Store.Get mongo find operation: ", err)
 			return //TODO: exponential backoff?
 		}
 		for cursor.Next(ctx) && cursor.Err() == nil {
@@ -79,7 +79,7 @@ func (s *Store) Get(ctx context.Context, filter messages.RequestFilter) <-chan e
 				logrus.Error("decoding event from database: ", err)
 			}
 
-			logrus.Debug("Store.Get found event: ", log.Marshall(e))
+			logrus.Debug("Store.Get event from mongo: ", log.Marshall(e))
 			select {
 			case res <- e:
 			case <-ctx.Done():

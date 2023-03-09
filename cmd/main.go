@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -19,6 +20,7 @@ import (
 
 func main() {
 	logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetOutput(os.Stdout)
 	mongoUri := os.Getenv("MONGODB_URI")
 	logrus.Info(mongoUri)
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoUri))
@@ -58,7 +60,7 @@ func main() {
 				logrus.Info("closing websocket")
 				return
 			case e := <-events:
-				logrus.Debug("recived event: ", log.Marshall(e))
+				logrus.Debug("recived event: ", e.ID) //log.Marshall(e))
 				err := s.Save(ctx, e)
 				if err != nil {
 					logrus.Error("saveing event", "error", err)
@@ -75,7 +77,7 @@ func main() {
 				foundEvents := s.Get(requestCtx, req.Filter)
 				go WriteFoundEventsToConnection(requestCtx, req.ID, foundEvents, conn)
 			case close := <-closes:
-				logrus.Debug("recived close: ", log.Marshall(close))
+				logrus.Debug("recived close: ", close.Subscription) //log.Marshall(close))
 				cancelSubscriptionFunc, ok := ongoingSubscriptions[close.Subscription]
 				if !ok {
 					continue
@@ -100,7 +102,6 @@ func WriteFoundEventsToConnection(ctx context.Context, sub messages.Subscription
 			logrus.Debug("request context cancelled", "subId", sub)
 			return
 		case e := <-foundEvents:
-			logrus.Debug("got event on request channel: ", e.ID)
 			eventMsg, err := json.Marshal([]any{"EVENT", sub, e})
 			if err != nil {
 				logrus.Debug("marshalling eventMsg to send", "subId", sub, "error", err)
@@ -110,7 +111,7 @@ func WriteFoundEventsToConnection(ctx context.Context, sub messages.Subscription
 			if err != nil {
 				logrus.Error("request attemp writing to websocket", "error", err)
 			}
-			logrus.Debug("event written on channel: ", string(eventMsg))
+			logrus.Debug(fmt.Sprintf("eventID %s written to subscriptionID %s", e.ID, sub))
 		}
 	}
 }
