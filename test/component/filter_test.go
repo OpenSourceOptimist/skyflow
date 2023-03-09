@@ -111,7 +111,7 @@ func TestFiltering(t *testing.T) {
 			name:            "Enfoce limit, sorted on created_at",
 			allEvents:       []nostr.Event{createdAt100, createdAt200, createdAt300, createdAt400},
 			filter:          nostr.Filter{Limit: 3},
-			recivedEventIDs: []string{createdAt200.ID, createdAt300.ID, createdAt400.ID},
+			recivedEventIDs: []string{createdAt400.ID, createdAt300.ID, createdAt200.ID},
 		},
 	}
 	for _, tc := range testcases {
