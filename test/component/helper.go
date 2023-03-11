@@ -8,7 +8,9 @@ import (
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
+	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"github.com/google/uuid"
+	"github.com/nbd-wtf/go-nostr"
 	"github.com/stretchr/testify/require"
 	"nhooyr.io/websocket"
 )
@@ -20,6 +22,19 @@ func newSocket(ctx context.Context, t *testing.T) (*websocket.Conn, Closer) {
 	require.NoError(t, err, "websocket dial error")
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode, "handshake status")
 	return conn, func() { conn.Close(websocket.StatusGoingAway, "bye") }
+}
+
+func toEvent(ne nostr.Event) event.Event {
+	return event.Event{
+		ID:        event.EventID(ne.ID),
+		PubKey:    event.PubKey(ne.PubKey),
+		CreatedAt: event.Timestamp(ne.CreatedAt.Unix()),
+		Kind:      event.EventKind(ne.Kind),
+		Tags:      slice.Map(ne.Tags, func(t nostr.Tag) event.EventTag { return event.EventTag(t) }),
+		Content:   ne.Content,
+		Sig:       event.EventSignature(ne.Sig),
+	}
+
 }
 
 func publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.Conn) {
@@ -34,6 +49,26 @@ func requestSub(ctx context.Context, t *testing.T, filter messages.RequestFilter
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, bytes))
 	return messages.SubscriptionID(subID)
+}
+
+func listenForEventsOnSub(
+	ctx context.Context, t *testing.T, conn *websocket.Conn, sub messages.SubscriptionID,
+) <-chan event.Event {
+	events := make(chan event.Event)
+	go func() {
+		for {
+			id, e := readEvent(ctx, t, conn)
+			if id != sub {
+				continue
+			}
+			select {
+			case events <- e:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return events
 }
 
 func readEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) (messages.SubscriptionID, event.Event) {

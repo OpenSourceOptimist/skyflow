@@ -110,8 +110,8 @@ func TestFiltering(t *testing.T) {
 		filter          nostr.Filter
 		recivedEventIDs []string
 	}{
-		{ // NIP01: When limit: n is present it is assumed that the events returned in the initial query will be the latest n events.
-			name:            "Enfoce limit, sorted on created_at",
+		{
+			name:            "Enfoce limit, latest 3",
 			allEvents:       []nostr.Event{createdAt100, createdAt200, createdAt300, createdAt400},
 			filter:          nostr.Filter{Limit: 3},
 			recivedEventIDs: []string{createdAt400.ID, createdAt300.ID, createdAt200.ID},
@@ -139,6 +139,57 @@ func TestFiltering(t *testing.T) {
 			recivedEventIDs := slice.Map(reciviedEvents, func(e *nostr.Event) string { return e.ID })
 			require.Equal(t, tc.recivedEventIDs, recivedEventIDs)
 
+		})
+	}
+}
+
+func TestTagFiltering(t *testing.T) {
+	createdAt100 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(100, 0)}))
+	createdAt200 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(200, 0)}))
+	createdAt300 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(300, 0)}))
+	createdAt400 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(400, 0)}))
+	//_, pub1 := NewKeyPair(t)
+	//_, pub2 := NewKeyPair(t)
+	//referencingPub1 := toEvent(NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub1.String(), ""}}}))
+	//referencingPub2 := toEvent(NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub2.String(), ""}}}))
+	testcases := []struct {
+		name            string
+		allEvents       []event.Event
+		filter          messages.RequestFilter
+		recivedEventIDs []event.EventID
+	}{
+		{
+			name:            "Enfoce limit, sorted on created_at",
+			allEvents:       []event.Event{createdAt100, createdAt200, createdAt300, createdAt400},
+			filter:          messages.RequestFilter{Limit: 3},
+			recivedEventIDs: []event.EventID{createdAt400.ID, createdAt300.ID, createdAt200.ID},
+		},
+		/*
+			{
+				name:            "Filter on pubkeys referenced in p tag",
+				allEvents:       []event.Event{referencingPub1, referencingPub2, createdAt100},
+				filter:          messages.RequestFilter{P: []event.PubKey{event.PubKey(pub1)}},
+				recivedEventIDs: []event.EventID{referencingPub1.ID},
+			},
+		*/
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			//defer clearMongo()
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			conn, closer := newSocket(ctx, t)
+			defer closer()
+			for _, e := range tc.allEvents {
+				publish(ctx, t, e, conn)
+			}
+			sub := requestSub(ctx, t, tc.filter, conn)
+			reciviedEvents := slice.ReadSlice(
+				listenForEventsOnSub(ctx, t, conn, sub),
+				500*time.Millisecond,
+			)
+			recivedEventIDs := slice.Map(reciviedEvents, func(e event.Event) event.EventID { return e.ID })
+			require.Equal(t, tc.recivedEventIDs, recivedEventIDs)
 		})
 	}
 }

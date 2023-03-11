@@ -21,7 +21,7 @@ func Contains[T comparable](slice []T, element T) bool {
 	return false
 }
 
-func ReadSlice[T any](c chan T, timeout time.Duration) []T {
+func ReadSlice[T any](c <-chan T, timeout time.Duration) []T {
 	res := make([]T, 0)
 	for {
 		select {
