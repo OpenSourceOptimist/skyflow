@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
@@ -41,6 +42,28 @@ func publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.C
 	reqBytes, err := json.Marshal([]interface{}{"EVENT", e})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
+	ensureExists(ctx, t, e.ID, conn, time.Second)
+}
+
+func ensureExists(ctx context.Context, t *testing.T, id event.EventID, conn *websocket.Conn, maxWait time.Duration) {
+	sub := requestSub(ctx, t, messages.RequestFilter{IDs: []event.EventID{id}}, conn)
+	timeout := time.After(maxWait)
+	subConn, subConnCloser := newSocket(ctx, t)
+	defer subConnCloser()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	subscription := listenForEventsOnSub(ctx, t, subConn, sub)
+	for {
+		select {
+		case e := <-subscription:
+			if e.ID == id {
+				return
+			}
+		case <-timeout:
+			require.Fail(t, "timed out waiting for event: "+string(id))
+			return
+		}
+	}
 }
 
 func requestSub(ctx context.Context, t *testing.T, filter messages.RequestFilter, conn *websocket.Conn) messages.SubscriptionID {
@@ -73,6 +96,9 @@ func listenForEventsOnSub(
 
 func readEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) (messages.SubscriptionID, event.Event) {
 	msgType, responseBytes, err := conn.Read(ctx)
+	if ctx.Err() != nil {
+		return messages.SubscriptionID(""), event.Event{}
+	}
 	require.NoError(t, err)
 	require.Equal(t, websocket.MessageText, msgType)
 
