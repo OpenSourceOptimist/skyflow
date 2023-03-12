@@ -29,44 +29,13 @@ func (s *Store) Save(ctx context.Context, e event.Event) error {
 func (s *Store) Get(ctx context.Context, filter messages.RequestFilter) <-chan event.Event {
 	res := make(chan event.Event)
 	go func() {
-		var filters []primitive.M
-		if len(filter.IDs) > 0 {
-			filters = append(filters, primitive.M{"id": primitive.M{"$in": filter.IDs}})
-		}
-		if len(filter.Authors) > 0 {
-			filters = append(filters, primitive.M{"pubkey": primitive.M{"$in": filter.Authors}})
-		}
-		if len(filter.Kinds) > 0 {
-			filters = append(filters, primitive.M{"kind": primitive.M{"$in": filter.Kinds}})
-		}
-		var createdAtConstraints []primitive.M
-		if filter.Since != 0 {
-			createdAtConstraints = append(createdAtConstraints, primitive.M{"created_at": primitive.M{"$gt": filter.Since}})
-		}
-		if filter.Until != 0 {
-			createdAtConstraints = append(createdAtConstraints, primitive.M{"created_at": primitive.M{"$lt": filter.Until}})
-		}
-		query := primitive.M{}
-		if len(filters) > 0 && len(createdAtConstraints) == 0 {
-			query = primitive.M{"$or": filters}
-		}
-		if len(filters) == 0 && len(createdAtConstraints) > 0 {
-			query = primitive.M{"$and": createdAtConstraints}
-		}
-		if len(filters) > 0 && len(createdAtConstraints) > 0 {
-			query = primitive.M{"$and": primitive.A{
-				primitive.M{"$and": createdAtConstraints},
-				primitive.M{"$or": filters},
-			}}
-		}
-		logrus.Debug("Store.Get find query: ", query)
 		findOpts := options.
 			Find().
 			SetSort(primitive.D{{Key: "created_at", Value: -1}})
 		if filter.Limit != 0 {
 			findOpts.SetLimit(filter.Limit)
 		}
-		cursor, err := s.EventCol.Find(ctx, query, findOpts)
+		cursor, err := s.EventCol.Find(ctx, filter.AsMongoQuery(), findOpts)
 		if err != nil {
 			logrus.Error("Store.Get mongo find operation: ", err)
 			return //TODO: exponential backoff?
@@ -86,8 +55,7 @@ func (s *Store) Get(ctx context.Context, filter messages.RequestFilter) <-chan e
 				return
 			}
 		}
-		logrus.Debug("Store.Get: nothing more to get from cursor: next: ", cursor.Next(ctx), ", error: ", cursor.Err())
-		// TODO: how to handle if next is false or we have a cursor error
+		logrus.Debug("Store.Get: initial query completed: next: ", cursor.Next(ctx), ", error: ", cursor.Err())
 	}()
 	return res
 }

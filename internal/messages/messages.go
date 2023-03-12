@@ -10,6 +10,7 @@ import (
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"nhooyr.io/websocket"
 )
 
@@ -50,6 +51,40 @@ type RequestFilter struct {
 	Since   event.Timestamp   `json:"since"`   // an integer unix timestamp, events must be newer than this to pass
 	Until   event.Timestamp   `json:"until"`   // an integer unix timestamp, events must be older than this to pass
 	Limit   int64             `json:"limit"`   // maximum number of events to be returned in the initial query
+}
+
+func (filter RequestFilter) AsMongoQuery() primitive.M {
+	var filters []primitive.M
+	if len(filter.IDs) > 0 {
+		filters = append(filters, primitive.M{"id": primitive.M{"$in": filter.IDs}})
+	}
+	if len(filter.Authors) > 0 {
+		filters = append(filters, primitive.M{"pubkey": primitive.M{"$in": filter.Authors}})
+	}
+	if len(filter.Kinds) > 0 {
+		filters = append(filters, primitive.M{"kind": primitive.M{"$in": filter.Kinds}})
+	}
+	var createdAtConstraints []primitive.M
+	if filter.Since != 0 {
+		createdAtConstraints = append(createdAtConstraints, primitive.M{"created_at": primitive.M{"$gt": filter.Since}})
+	}
+	if filter.Until != 0 {
+		createdAtConstraints = append(createdAtConstraints, primitive.M{"created_at": primitive.M{"$lt": filter.Until}})
+	}
+	query := primitive.M{}
+	if len(filters) > 0 && len(createdAtConstraints) == 0 {
+		query = primitive.M{"$or": filters}
+	}
+	if len(filters) == 0 && len(createdAtConstraints) > 0 {
+		query = primitive.M{"$and": createdAtConstraints}
+	}
+	if len(filters) > 0 && len(createdAtConstraints) > 0 {
+		query = primitive.M{"$and": primitive.A{
+			primitive.M{"$and": createdAtConstraints},
+			primitive.M{"$or": filters},
+		}}
+	}
+	return query
 }
 
 type SubscriptionID string
