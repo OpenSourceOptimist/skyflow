@@ -27,13 +27,13 @@ func newSocket(ctx context.Context, t *testing.T) (*websocket.Conn, Closer) {
 
 func toEvent(ne nostr.Event) event.Event {
 	return event.Event{
-		ID:        event.EventID(ne.ID),
+		ID:        event.ID(ne.ID),
 		PubKey:    event.PubKey(ne.PubKey),
 		CreatedAt: event.Timestamp(ne.CreatedAt.Unix()),
-		Kind:      event.EventKind(ne.Kind),
-		Tags:      slice.Map(ne.Tags, func(t nostr.Tag) event.EventTag { return event.EventTag(t) }),
+		Kind:      event.Kind(ne.Kind),
+		Tags:      slice.Map(ne.Tags, func(t nostr.Tag) event.Tag { return event.Tag(t) }),
 		Content:   ne.Content,
-		Sig:       event.EventSignature(ne.Sig),
+		Sig:       event.Signature(ne.Sig),
 	}
 
 }
@@ -45,10 +45,10 @@ func publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.C
 	ensureExists(ctx, t, e.ID, time.Second)
 }
 
-func ensureExists(ctx context.Context, t *testing.T, id event.EventID, maxWait time.Duration) {
+func ensureExists(ctx context.Context, t *testing.T, id event.ID, maxWait time.Duration) {
 	conn, subConnCloser := newSocket(ctx, t)
 	defer subConnCloser()
-	sub := requestSub(ctx, t, messages.RequestFilter{IDs: []event.EventID{id}}, conn)
+	sub := requestSub(ctx, t, messages.RequestFilter{IDs: []event.ID{id}}, conn)
 	timeout := time.After(maxWait)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

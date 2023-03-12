@@ -10,17 +10,17 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 )
 
-type EventID string // <32-bytes lowercase hex-encoded sha256 of the the serialized event data>
-func (id EventID) Bytes() ([]byte, error) {
+type ID string // <32-bytes lowercase hex-encoded sha256 of the the serialized event data>
+func (id ID) Bytes() ([]byte, error) {
 	return hex.DecodeString(string(id))
 }
 
 type Timestamp int64 // <unix timestamp in seconds>,
-type EventKind int64
+type Kind int64
 
 // ["e", <32-bytes hex of the id of another event>, <recommended relay URL>],
 // ["p", <32-bytes hex of the key>, <recommended relay URL>],
-type EventTag []string
+type Tag []string
 
 type PubKey string //  <32-bytes lowercase hex-encoded public key of the event creator>
 func (pk PubKey) BIP340Secp256k1() (btcec.PublicKey, error) {
@@ -39,17 +39,17 @@ func (pk PubKey) BIP340Secp256k1() (btcec.PublicKey, error) {
 	return *pubKey, nil
 }
 
-type EventSignature string // <64-bytes hex of the signature of the sha256 hash of the serialized event data, which is the same as the "id" field>
+type Signature string // <64-bytes hex of the signature of the sha256 hash of the serialized event data, which is the same as the "id" field>
 
-func (sig EventSignature) Hex() string {
+func (sig Signature) Hex() string {
 	return string(sig)
 }
 
-func (sig EventSignature) Bytes() ([]byte, error) {
+func (sig Signature) Bytes() ([]byte, error) {
 	return hex.DecodeString(sig.Hex())
 }
 
-func (sig EventSignature) BIP340Secp256k1() (schnorr.Signature, error) {
+func (sig Signature) BIP340Secp256k1() (schnorr.Signature, error) {
 	sigBytes, err := sig.Bytes()
 	if err != nil {
 		return schnorr.Signature{}, err
@@ -66,16 +66,16 @@ func (sig EventSignature) BIP340Secp256k1() (schnorr.Signature, error) {
 }
 
 type Event struct {
-	ID        EventID        `json:"id" bson:"id"`
-	PubKey    PubKey         `json:"pubkey" bson:"pubkey"`
-	CreatedAt Timestamp      `json:"created_at" bson:"created_at"`
-	Kind      EventKind      `json:"kind" bson:"kind"`
-	Tags      []EventTag     `json:"tags" bson:"tags"`
-	Content   string         `json:"content" bson:"content"`
-	Sig       EventSignature `json:"sig" bson:"sig"`
+	ID        ID        `json:"id" bson:"id"`
+	PubKey    PubKey    `json:"pubkey" bson:"pubkey"`
+	CreatedAt Timestamp `json:"created_at" bson:"created_at"`
+	Kind      Kind      `json:"kind" bson:"kind"`
+	Tags      []Tag     `json:"tags" bson:"tags"`
+	Content   string    `json:"content" bson:"content"`
+	Sig       Signature `json:"sig" bson:"sig"`
 }
 
-func NewEventID(pub PubKey, createdAt Timestamp, kind EventKind, tags []EventTag, content string) (EventID, error) {
+func NewEventID(pub PubKey, createdAt Timestamp, kind Kind, tags []Tag, content string) (ID, error) {
 	bytes, err := json.Marshal([]interface{}{
 		0,
 		pub,
@@ -85,11 +85,11 @@ func NewEventID(pub PubKey, createdAt Timestamp, kind EventKind, tags []EventTag
 		content,
 	})
 	if err != nil {
-		return EventID(""), err
+		return ID(""), err
 	}
 
 	eventIDByteArray := sha256.Sum256(bytes)
-	return EventID(hex.EncodeToString(eventIDByteArray[:])), nil
+	return ID(hex.EncodeToString(eventIDByteArray[:])), nil
 }
 
 func VerifyEvent(e Event) error {

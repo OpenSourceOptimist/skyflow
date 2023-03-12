@@ -14,14 +14,14 @@ import (
 )
 
 type RequestFilter struct {
-	IDs     []event.EventID   `json:"ids"`     // prefixes allowed
-	Authors []event.PubKey    `json:"authors"` // the pubkey of an event must be one of these, prefixes allowed
-	Kinds   []event.EventKind `json:"kinds"`   // a list of a kind numbers
-	E       []event.EventID   `json:"#e"`      // a list of event ids that are referenced in an "e" tag
-	P       []event.PubKey    `json:"#p"`      // a list of pubkeys that are referenced in a "p" tag
-	Since   event.Timestamp   `json:"since"`   // an integer unix timestamp, events must be newer than this to pass
-	Until   event.Timestamp   `json:"until"`   // an integer unix timestamp, events must be older than this to pass
-	Limit   int64             `json:"limit"`   // maximum number of events to be returned in the initial query
+	IDs     []event.ID      `json:"ids"`     // prefixes allowed
+	Authors []event.PubKey  `json:"authors"` // the pubkey of an event must be one of these, prefixes allowed
+	Kinds   []event.Kind    `json:"kinds"`   // a list of a kind numbers
+	E       []event.ID      `json:"#e"`      // a list of event ids that are referenced in an "e" tag
+	P       []event.PubKey  `json:"#p"`      // a list of pubkeys that are referenced in a "p" tag
+	Since   event.Timestamp `json:"since"`   // an integer unix timestamp, events must be newer than this to pass
+	Until   event.Timestamp `json:"until"`   // an integer unix timestamp, events must be older than this to pass
+	Limit   int64           `json:"limit"`   // maximum number of events to be returned in the initial query
 }
 
 func (filter RequestFilter) AsMongoQuery() primitive.M {
