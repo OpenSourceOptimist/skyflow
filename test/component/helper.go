@@ -42,17 +42,17 @@ func publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.C
 	reqBytes, err := json.Marshal([]interface{}{"EVENT", e})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
-	ensureExists(ctx, t, e.ID, conn, time.Second)
+	ensureExists(ctx, t, e.ID, time.Second)
 }
 
-func ensureExists(ctx context.Context, t *testing.T, id event.EventID, conn *websocket.Conn, maxWait time.Duration) {
+func ensureExists(ctx context.Context, t *testing.T, id event.EventID, maxWait time.Duration) {
+	conn, subConnCloser := newSocket(ctx, t)
+	defer subConnCloser()
 	sub := requestSub(ctx, t, messages.RequestFilter{IDs: []event.EventID{id}}, conn)
 	timeout := time.After(maxWait)
-	subConn, subConnCloser := newSocket(ctx, t)
-	defer subConnCloser()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	subscription := listenForEventsOnSub(ctx, t, subConn, sub)
+	subscription := listenForEventsOnSub(ctx, t, conn, sub)
 	for {
 		select {
 		case e := <-subscription:
