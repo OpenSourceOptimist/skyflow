@@ -8,39 +8,10 @@ import (
 	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
-	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"nhooyr.io/websocket"
 )
-
-type MessageType string
-
-const (
-	Event   MessageType = "EVENT"
-	Request MessageType = "REQ"
-	Close   MessageType = "CLOSE"
-	Notice  MessageType = "NOTICE"
-)
-
-var Nil MessageType
-
-var NIP01MessageTypes = []MessageType{Event, Request, Close, Notice}
-
-type Message []string
-
-func (m Message) MessageType() (MessageType, error) {
-	if len(m) == 0 {
-		return Nil, fmt.Errorf("zero lenght message")
-	}
-	msgType := MessageType(m[0])
-	if slice.Contains(NIP01MessageTypes, msgType) {
-		return msgType, nil
-	}
-	return Nil, fmt.Errorf("non-NIP01 event type")
-}
-
-func (m Message) AsEvent() (event.Event, error) { panic("") }
 
 type RequestFilter struct {
 	IDs     []event.EventID   `json:"ids"`     // prefixes allowed
@@ -148,14 +119,14 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 				errs <- fmt.Errorf("empty message")
 				continue
 			}
-			var msgType MessageType
+			var msgType string
 			err = json.Unmarshal(message[0], &msgType)
 			if err != nil {
 				errs <- fmt.Errorf("unmarshalling message type: %w", err)
 				continue
 			}
-
-			if msgType == Event {
+			switch msgType {
+			case "EVENT":
 				if len(message) != 2 {
 					errs <- fmt.Errorf("wrong event length: %s", string(data))
 					continue
@@ -174,7 +145,7 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 				go func(eventToSend event.Event) {
 					events <- eventToSend
 				}(e)
-			} else if msgType == Request {
+			case "REQ":
 				if len(message) != 3 {
 					errs <- fmt.Errorf("wrong event request lenght: %s", string(data))
 					continue
@@ -194,7 +165,7 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 				go func(id SubscriptionID, f RequestFilter) {
 					requests <- RequestMsg{ID: id, Filter: f}
 				}(subID, filter)
-			} else if msgType == Close {
+			case "CLOSE":
 				if len(message) != 2 {
 					errs <- fmt.Errorf("wrong close message lenght: %s", string(data))
 					continue
