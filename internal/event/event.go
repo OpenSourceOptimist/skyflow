@@ -21,6 +21,29 @@ type Kind int64
 // ["e", <32-bytes hex of the id of another event>, <recommended relay URL>],
 // ["p", <32-bytes hex of the key>, <recommended relay URL>],
 type Tag []string
+type URL string
+
+func E(t Tag) (ID, bool) {
+	var nilID ID
+	if len(t) != 3 {
+		return nilID, false
+	}
+	if t[0] != "e" {
+		return nilID, false
+	}
+	return ID(t[1]), true
+}
+
+func P(t Tag) (PubKey, bool) {
+	var nilKey PubKey
+	if len(t) != 3 {
+		return nilKey, false
+	}
+	if t[0] != "p" {
+		return nilKey, false
+	}
+	return PubKey(t[1]), true
+}
 
 type PubKey string //  <32-bytes lowercase hex-encoded public key of the event creator>
 func (pk PubKey) BIP340Secp256k1() (btcec.PublicKey, error) {

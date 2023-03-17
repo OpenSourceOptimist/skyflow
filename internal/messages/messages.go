@@ -8,23 +8,62 @@ import (
 	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
+	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"nhooyr.io/websocket"
 )
 
 type RequestFilter struct {
-	IDs     []event.ID      `json:"ids"`     // prefixes allowed
-	Authors []event.PubKey  `json:"authors"` // the pubkey of an event must be one of these, prefixes allowed
-	Kinds   []event.Kind    `json:"kinds"`   // a list of a kind numbers
-	E       []event.ID      `json:"#e"`      // a list of event ids that are referenced in an "e" tag
-	P       []event.PubKey  `json:"#p"`      // a list of pubkeys that are referenced in a "p" tag
-	Since   event.Timestamp `json:"since"`   // an integer unix timestamp, events must be newer than this to pass
-	Until   event.Timestamp `json:"until"`   // an integer unix timestamp, events must be older than this to pass
-	Limit   int64           `json:"limit"`   // maximum number of events to be returned in the initial query
+	IDs     []event.ID      `json:"ids" bson:"ids"`
+	Authors []event.PubKey  `json:"authors" bson:"authors"`
+	Kinds   []event.Kind    `json:"kinds" bson:"kinds"`
+	E       []event.ID      `json:"#e" bson:"tag_e"`
+	P       []event.PubKey  `json:"#p" bson:"tag_p"`
+	Since   event.Timestamp `json:"since" bson:"since"`
+	Until   event.Timestamp `json:"until" bson:"until"`
+	Limit   int64           `json:"limit" bson:"limit"`
+}
+type M primitive.M
+type A primitive.A
+
+// MongoDB filter for subscriptions that would match event.
+func SubscriptionFilter(e event.Event) primitive.M {
+	return primitive.M{
+		"$and": A{
+			M{"$or": A{
+				M{"ids": e.ID},
+				M{"ids": M{"$size": 0}},
+			}},
+			M{"$or": A{
+				M{"authors": e.PubKey},
+				M{"authors": M{"$size": 0}},
+			}},
+			M{"$or": A{
+				M{"kinds": e.Kind},
+				M{"kinds": M{"$size": 0}},
+			}},
+			M{"$or": A{
+				M{"$or": slice.Map(
+					slice.FindAll(e.Tags, event.E),
+					func(id event.ID) M { return M{"tag_e": id} },
+				)},
+				M{"tag_e": M{"$size": 0}},
+			}},
+			M{"$or": A{
+				M{"$or": slice.Map(
+					slice.FindAll(e.Tags, event.P),
+					func(key event.PubKey) M { return M{"tag_p": key} },
+				)},
+				M{"tag_p": M{"$size": 0}},
+			}},
+			// TODO: missing since, untill
+		},
+	}
 }
 
-func (filter RequestFilter) AsMongoQuery() primitive.M {
+// MongoDB filter for events matching filter.
+func EventFilter(filter RequestFilter) primitive.M {
 	var filters []primitive.M
 	if len(filter.IDs) > 0 {
 		filters = append(filters, primitive.M{"id": primitive.M{"$in": filter.IDs}})
@@ -60,9 +99,9 @@ func (filter RequestFilter) AsMongoQuery() primitive.M {
 
 type SubscriptionID string
 
-type RequestMsg struct {
-	ID     SubscriptionID
-	Filter RequestFilter
+type Subscription struct {
+	ID     SubscriptionID `json:"sub_id" bson:"sub_id"`
+	Filter RequestFilter  `json:"filter" bson:"filter"`
 }
 
 type CloseMsg struct {
@@ -73,9 +112,9 @@ type MessageReader interface {
 	Read(ctx context.Context) (websocket.MessageType, []byte, error)
 }
 
-func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event, <-chan RequestMsg, <-chan CloseMsg, <-chan error) {
+func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event, <-chan Subscription, <-chan CloseMsg, <-chan error) {
 	events := make(chan event.Event)
-	requests := make(chan RequestMsg)
+	requests := make(chan Subscription)
 	closes := make(chan CloseMsg)
 	errs := make(chan error)
 	go func() {
@@ -163,7 +202,7 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 					continue
 				}
 				go func(id SubscriptionID, f RequestFilter) {
-					requests <- RequestMsg{ID: id, Filter: f}
+					requests <- Subscription{ID: id, Filter: f}
 				}(subID, filter)
 			case "CLOSE":
 				if len(message) != 2 {

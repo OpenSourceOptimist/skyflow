@@ -1,6 +1,7 @@
 package slice
 
 import (
+	"context"
 	"time"
 )
 
@@ -31,4 +32,36 @@ func ReadSlice[T any](c <-chan T, timeout time.Duration) []T {
 			return res
 		}
 	}
+}
+
+func FindAll[T any, K any](slice []T, f func(T) (K, bool)) []K {
+	res := make([]K, 0, len(slice))
+	for _, t := range slice {
+		k, ok := f(t)
+		if ok {
+			res = append(res, k)
+		}
+	}
+	return res
+}
+
+func ChanConcatenate[T any](head <-chan T, tail <-chan T) <-chan T {
+	res := make(chan T)
+	go func() {
+		for t := range head {
+			res <- t
+		}
+		for t := range tail {
+			res <- t
+		}
+	}()
+	return res
+}
+func AsyncWrite[T any](ctx context.Context, c chan<- T, t T) {
+	go func() {
+		select {
+		case c <- t:
+		case <-ctx.Done():
+		}
+	}()
 }

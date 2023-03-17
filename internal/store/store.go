@@ -3,10 +3,6 @@ package store
 import (
 	"context"
 
-	"github.com/OpenSourceOptimist/skyflow/internal/event"
-	"github.com/OpenSourceOptimist/skyflow/internal/log"
-	"github.com/OpenSourceOptimist/skyflow/internal/messages"
-	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -14,48 +10,64 @@ import (
 
 type Collection interface {
 	Find(ctx context.Context, filter interface{}, opts ...*options.FindOptions) (*mongo.Cursor, error)
-	InsertOne(ctx context.Context, document interface{}, opts ...*options.InsertOneOptions) (*mongo.InsertOneResult, error)
+	InsertOne(
+		ctx context.Context,
+		document interface{},
+		opts ...*options.InsertOneOptions,
+	) (*mongo.InsertOneResult, error)
+	DeleteOne(ctx context.Context, filter interface{}, opts ...*options.DeleteOptions) (*mongo.DeleteResult, error)
 }
 
-type Store struct {
-	EventCol Collection
+type Store[T any] struct {
+	Col Collection
 }
 
-func (s *Store) Save(ctx context.Context, e event.Event) error {
-	_, err := s.EventCol.InsertOne(ctx, e)
+func (s *Store[T]) InsertOne(ctx context.Context, e T) error {
+	_, err := s.Col.InsertOne(ctx, e)
 	return err
 }
 
-func (s *Store) Get(ctx context.Context, filter messages.RequestFilter) <-chan event.Event {
-	res := make(chan event.Event)
-	go func() {
-		findOpts := options.
-			Find().
-			SetSort(primitive.D{{Key: "created_at", Value: -1}})
-		if filter.Limit != 0 {
-			findOpts.SetLimit(filter.Limit)
-		}
-		cursor, err := s.EventCol.Find(ctx, filter.AsMongoQuery(), findOpts)
-		if err != nil {
-			logrus.Error("Store.Get mongo find operation: ", err)
-			return //TODO: exponential backoff?
-		}
-		for cursor.Next(ctx) && cursor.Err() == nil {
-			var e event.Event
-			//TODO: unclear how we should handle an error here
-			err := cursor.Decode(&e)
-			if err != nil {
-				logrus.Error("decoding event from database: ", err)
-			}
+type FindOptions struct {
+	Sort  primitive.D
+	Limit int64
+}
 
-			logrus.Debug("Store.Get event from mongo: ", log.Marshall(e))
+func (s *Store[T]) Find(ctx context.Context, filter primitive.M, opts ...FindOptions) <-chan T {
+	findOpts := options.Find()
+	for _, opt := range opts {
+		if opt.Sort != nil {
+			findOpts.SetSort(opt.Sort)
+		}
+		if opt.Limit != 0 {
+			findOpts.SetLimit(opt.Limit)
+		}
+	}
+	cursor, err := s.Col.Find(ctx, filter, findOpts)
+	if err != nil {
+		emptyChan := make(chan T)
+		close(emptyChan)
+		return emptyChan
+	}
+	return asChannel[T](ctx, cursor)
+}
+
+func asChannel[T any](ctx context.Context, cursor *mongo.Cursor) <-chan T {
+	res := make(chan T)
+	go func() {
+		for cursor.Next(ctx) && cursor.Err() == nil {
+			var t T
+			err := cursor.Decode(&t)
+			if err != nil {
+				close(res)
+				return
+			}
 			select {
-			case res <- e:
+			case res <- t:
 			case <-ctx.Done():
 				return
 			}
 		}
-		logrus.Debug("Store.Get: initial query completed: next: ", cursor.Next(ctx), ", error: ", cursor.Err())
+		close(res)
 	}()
 	return res
 }
