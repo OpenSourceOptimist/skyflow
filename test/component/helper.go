@@ -48,7 +48,7 @@ func publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.C
 func ensureExists(ctx context.Context, t *testing.T, id event.ID, maxWait time.Duration) {
 	conn, subConnCloser := newSocket(ctx, t)
 	defer subConnCloser()
-	sub := requestSub(ctx, t, messages.RequestFilter{IDs: []event.ID{id}}, conn)
+	sub := requestSub(ctx, t, messages.Subscription{IDs: []event.ID{id}}, conn)
 	timeout := time.After(maxWait)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -66,7 +66,7 @@ func ensureExists(ctx context.Context, t *testing.T, id event.ID, maxWait time.D
 	}
 }
 
-func requestSub(ctx context.Context, t *testing.T, filter messages.RequestFilter, conn *websocket.Conn) messages.SubscriptionID {
+func requestSub(ctx context.Context, t *testing.T, filter messages.Subscription, conn *websocket.Conn) messages.SubscriptionID {
 	subID := uuid.NewString()
 	bytes, err := json.Marshal([]interface{}{"REQ", subID, filter})
 	require.NoError(t, err)

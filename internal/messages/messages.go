@@ -14,7 +14,8 @@ import (
 	"nhooyr.io/websocket"
 )
 
-type RequestFilter struct {
+type Subscription struct {
+	ID      SubscriptionID  `json:"id" bson:"id"`
 	IDs     []event.ID      `json:"ids" bson:"ids"`
 	Authors []event.PubKey  `json:"authors" bson:"authors"`
 	Kinds   []event.Kind    `json:"kinds" bson:"kinds"`
@@ -63,7 +64,7 @@ func SubscriptionFilter(e event.Event) primitive.M {
 }
 
 // MongoDB filter for events matching filter.
-func EventFilter(filter RequestFilter) primitive.M {
+func EventFilter(filter Subscription) primitive.M {
 	var filters []primitive.M
 	if len(filter.IDs) > 0 {
 		filters = append(filters, primitive.M{"id": primitive.M{"$in": filter.IDs}})
@@ -99,11 +100,6 @@ func EventFilter(filter RequestFilter) primitive.M {
 
 type SubscriptionID string
 
-type Subscription struct {
-	ID     SubscriptionID `json:"sub_id" bson:"sub_id"`
-	Filter RequestFilter  `json:"filter" bson:"filter"`
-}
-
 type CloseMsg struct {
 	Subscription SubscriptionID
 }
@@ -114,7 +110,7 @@ type MessageReader interface {
 
 func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event, <-chan Subscription, <-chan CloseMsg, <-chan error) {
 	events := make(chan event.Event)
-	requests := make(chan Subscription)
+	subscriptions := make(chan Subscription)
 	closes := make(chan CloseMsg)
 	errs := make(chan error)
 	go func() {
@@ -195,15 +191,16 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 					errs <- fmt.Errorf("unmatshal sub id: %w", err)
 					continue
 				}
-				var filter RequestFilter
-				err := json.Unmarshal(message[2], &filter)
+				var subscription Subscription
+				err := json.Unmarshal(message[2], &subscription)
 				if err != nil {
 					errs <- fmt.Errorf("unmarshal request message: %s", string(data))
 					continue
 				}
-				go func(id SubscriptionID, f RequestFilter) {
-					requests <- Subscription{ID: id, Filter: f}
-				}(subID, filter)
+				subscription.ID = subID
+				go func(sub Subscription) {
+					subscriptions <- sub
+				}(subscription)
 			case "CLOSE":
 				if len(message) != 2 {
 					errs <- fmt.Errorf("wrong close message lenght: %s", string(data))
@@ -215,5 +212,5 @@ func ListenForMessages(ctx context.Context, r MessageReader) (<-chan event.Event
 			}
 		}
 	}()
-	return events, requests, closes, errs
+	return events, subscriptions, closes, errs
 }

@@ -112,10 +112,10 @@ func main() {
 				)
 				eventsInDatabase := eventDatabase.Find(
 					subscriptionCtx,
-					messages.EventFilter(subscription.Filter),
+					messages.EventFilter(subscription),
 					store.FindOptions{
 						Sort:  primitive.D{{Key: "created_at", Value: -1}},
-						Limit: subscription.Filter.Limit,
+						Limit: subscription.Limit,
 					},
 				)
 				subscriptionEvents := slice.ChanConcatenate(eventsInDatabase, newEvents)

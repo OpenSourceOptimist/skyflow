@@ -33,7 +33,7 @@ func TestVerificationEventID(t *testing.T) {
 
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, eventMsg))
 	// But should not show up in a request
-	reqBytes, _ := json.Marshal([]interface{}{"REQ", uuid.NewString(), messages.RequestFilter{IDs: []event.ID{testEvent.ID}}})
+	reqBytes, _ := json.Marshal([]interface{}{"REQ", uuid.NewString(), messages.Subscription{IDs: []event.ID{testEvent.ID}}})
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 	ctx, cancelFunc := context.WithTimeout(ctx, time.Second)
 	defer cancelFunc()
@@ -61,7 +61,7 @@ func TestVerificationSignature(t *testing.T) {
 	eventMsg, _ := json.Marshal([]any{"EVENT", testEvent})
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, eventMsg))
 	// But should not show up in a request
-	reqBytes, _ := json.Marshal([]interface{}{"REQ", uuid.NewString(), messages.RequestFilter{IDs: []event.ID{testEvent.ID}}})
+	reqBytes, _ := json.Marshal([]interface{}{"REQ", uuid.NewString(), messages.Subscription{IDs: []event.ID{testEvent.ID}}})
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 	ctx, cancelFunc := context.WithTimeout(ctx, time.Second)
 	defer cancelFunc()

@@ -16,57 +16,57 @@ func TestBasicFiltering(t *testing.T) {
 
 	testcases := []struct {
 		name             string
-		filter           messages.RequestFilter
+		filter           messages.Subscription
 		expectingMessage bool
 	}{
 		{
 			name:             "eventID filter misses",
-			filter:           messages.RequestFilter{IDs: []event.ID{"randomEventID"}},
+			filter:           messages.Subscription{IDs: []event.ID{"randomEventID"}},
 			expectingMessage: false,
 		},
 		{
 			name:             "eventID filter matches",
-			filter:           messages.RequestFilter{IDs: []event.ID{validEvent.ID}},
+			filter:           messages.Subscription{IDs: []event.ID{validEvent.ID}},
 			expectingMessage: true,
 		},
 		{
 			name:             "eventID filter misses",
-			filter:           messages.RequestFilter{Authors: []event.PubKey{"randomPubkey"}},
+			filter:           messages.Subscription{Authors: []event.PubKey{"randomPubkey"}},
 			expectingMessage: false,
 		},
 		{
 			name:             "eventID filter matches",
-			filter:           messages.RequestFilter{Authors: []event.PubKey{validEvent.PubKey}},
+			filter:           messages.Subscription{Authors: []event.PubKey{validEvent.PubKey}},
 			expectingMessage: true,
 		},
 		{
 			name:             "kind filter misses",
-			filter:           messages.RequestFilter{Kinds: []event.Kind{24343}},
+			filter:           messages.Subscription{Kinds: []event.Kind{24343}},
 			expectingMessage: false,
 		},
 		{
 			name:             "kind filter matches",
-			filter:           messages.RequestFilter{Kinds: []event.Kind{validEvent.Kind}},
+			filter:           messages.Subscription{Kinds: []event.Kind{validEvent.Kind}},
 			expectingMessage: true,
 		},
 		{
 			name:             "since filter matches",
-			filter:           messages.RequestFilter{Since: validEvent.CreatedAt - 1},
+			filter:           messages.Subscription{Since: validEvent.CreatedAt - 1},
 			expectingMessage: true,
 		},
 		{
 			name:             "since filter does not matche",
-			filter:           messages.RequestFilter{Since: validEvent.CreatedAt + 1},
+			filter:           messages.Subscription{Since: validEvent.CreatedAt + 1},
 			expectingMessage: false,
 		},
 		{
 			name:             "until filter matches",
-			filter:           messages.RequestFilter{Until: validEvent.CreatedAt + 1},
+			filter:           messages.Subscription{Until: validEvent.CreatedAt + 1},
 			expectingMessage: true,
 		},
 		{
 			name:             "until filter does not matche",
-			filter:           messages.RequestFilter{Until: validEvent.CreatedAt - 1},
+			filter:           messages.Subscription{Until: validEvent.CreatedAt - 1},
 			expectingMessage: false,
 		},
 	}
@@ -158,13 +158,13 @@ func TestTagFiltering(t *testing.T) {
 	testcases := []struct {
 		name            string
 		allEvents       []event.Event
-		filter          messages.RequestFilter
+		filter          messages.Subscription
 		recivedEventIDs []event.ID
 	}{
 		{
 			name:            "Enfoce limit, sorted on created_at",
 			allEvents:       []event.Event{createdAt100, createdAt200, createdAt300, createdAt400},
-			filter:          messages.RequestFilter{Limit: 3},
+			filter:          messages.Subscription{Limit: 3},
 			recivedEventIDs: []event.ID{createdAt400.ID, createdAt300.ID, createdAt200.ID},
 		},
 		/*{

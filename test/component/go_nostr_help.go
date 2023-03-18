@@ -1,6 +1,7 @@
 package component
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -51,4 +52,10 @@ func NewKeyPair(t *testing.T) (PrivKey, PubKey) {
 	pub, err := nostr.GetPublicKey(priv)
 	require.NoError(t, err)
 	return PrivKey(priv), PubKey(pub)
+}
+
+func NewConnection(t *testing.T) *nostr.Relay {
+	relay, err := nostr.RelayConnect(context.Background(), "ws://localhost:80")
+	require.NoError(t, err)
+	return relay
 }
