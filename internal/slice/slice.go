@@ -65,3 +65,19 @@ func AsyncWrite[T any](ctx context.Context, c chan<- T, t T) {
 		}
 	}()
 }
+
+func Chunk[T any](slice []T, size int) [][]T {
+	res := make([][]T, 0)
+	chunk := make([]T, 0)
+	for _, t := range slice {
+		chunk = append(chunk, t)
+		if len(chunk) >= size {
+			res = append(res, chunk)
+			chunk = nil
+		}
+	}
+	if len(chunk) > 0 {
+		res = append(res, chunk)
+	}
+	return res
+}
