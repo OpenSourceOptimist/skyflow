@@ -25,6 +25,19 @@ type Subscription struct {
 	Until   event.Timestamp `json:"until" bson:"until"`
 	Limit   int64           `json:"limit" bson:"limit"`
 }
+
+func (e Subscription) UniqueID() string {
+	return string(e.ID)
+}
+func (e Subscription) UniqueIDFieldName(format string) (string, error) {
+	if format == "json" || format == "bson" {
+		return "id", nil
+	} else if format == "struct" {
+		return "ID", nil
+	}
+	return "", fmt.Errorf("only support format json, bson, and struct, not " + format)
+}
+
 type M primitive.M
 type A primitive.A
 

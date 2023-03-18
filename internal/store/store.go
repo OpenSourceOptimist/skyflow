@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -18,7 +19,11 @@ type Collection interface {
 	DeleteOne(ctx context.Context, filter interface{}, opts ...*options.DeleteOptions) (*mongo.DeleteResult, error)
 }
 
-type Store[T any] struct {
+type HasUniqueID interface {
+	UniqueID() string
+	UniqueIDFieldName(format string) (string, error)
+}
+type Store[T HasUniqueID] struct {
 	Col Collection
 }
 
@@ -49,6 +54,15 @@ func (s *Store[T]) Find(ctx context.Context, filter primitive.M, opts ...FindOpt
 		return emptyChan
 	}
 	return asChannel[T](ctx, cursor)
+}
+
+func (s *Store[T]) DeleteOne(ctx context.Context, t T) error {
+	idFieldName, err := t.UniqueIDFieldName("bson")
+	if err != nil {
+		return fmt.Errorf("no unique ID field to delete on: %w", err)
+	}
+	_, err = s.Col.DeleteOne(ctx, primitive.M{idFieldName: t.UniqueID()})
+	return err
 }
 
 func asChannel[T any](ctx context.Context, cursor *mongo.Cursor) <-chan T {

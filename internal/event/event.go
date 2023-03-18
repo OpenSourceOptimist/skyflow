@@ -98,6 +98,18 @@ type Event struct {
 	Sig       Signature `json:"sig" bson:"sig"`
 }
 
+func (e Event) UniqueID() string {
+	return string(e.ID)
+}
+func (e Event) UniqueIDFieldName(format string) (string, error) {
+	if format == "json" || format == "bson" {
+		return "id", nil
+	} else if format == "struct" {
+		return "ID", nil
+	}
+	return "", fmt.Errorf("only support format json, bson, and struct, not " + format)
+}
+
 func NewEventID(pub PubKey, createdAt Timestamp, kind Kind, tags []Tag, content string) (ID, error) {
 	bytes, err := json.Marshal([]interface{}{
 		0,

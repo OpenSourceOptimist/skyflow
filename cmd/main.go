@@ -74,6 +74,7 @@ func main() {
 					}
 					subscription.cancel()
 					globalOngoingSubscriptions.Delete(subscriptionID)
+					subscriptions.DeleteOne(ctx, subscription.filter)
 				}
 				return //nolint:govet
 			case e := <-eventChan:
@@ -108,6 +109,7 @@ func main() {
 						ctx:       subscriptionCtx,
 						cancel:    cancelSubscription,
 						newEvents: newEvents,
+						filter:    subscription,
 					},
 				)
 				eventsInDatabase := eventDatabase.Find(
@@ -166,6 +168,7 @@ type SubscriptionHandle struct {
 	ctx       context.Context
 	cancel    func()
 	newEvents chan<- event.Event
+	filter    messages.Subscription
 }
 
 func NewSyncMap[K comparable, T any]() SyncMap[K, T] {
