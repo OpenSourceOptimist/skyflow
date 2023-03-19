@@ -60,10 +60,12 @@ func main() {
 		}()
 		ctx := r.Context()
 		subscriptionsAssosiatedWithRequest := make([]messages.SubscriptionID, 0)
-		eventChan, subscriptionReqChan, subscriptionCloseChan, errChan := messages.ListenForMessages(ctx, conn)
+		websocketMessages := messages.ListenForMessages(ctx, conn)
 		for {
 			l.IncrementSession()
+			var msg messages.WebsocketMessage
 			select {
+			case msg = <-websocketMessages:
 			case <-ctx.Done():
 				l.Info("ctx cancelled, closing websocket")
 				conn.Close(websocket.StatusNormalClosure, "session cancelled by user")
@@ -77,7 +79,14 @@ func main() {
 					subscriptions.DeleteOne(ctx, subscription.filter)
 				}
 				return //nolint:govet
-			case e := <-eventChan:
+			}
+			switch msg.MsgType {
+			case messages.EVENT:
+				e, ok := msg.AsEvent()
+				if !ok {
+					l.Error("not event", "msg", msg)
+					continue
+				}
 				l.Debug("event over websocket", "eID", e.ID)
 				_ = eventDatabase.InsertOne(ctx, e)
 				subCount := 0
@@ -92,7 +101,11 @@ func main() {
 					slice.AsyncWrite(handle.ctx, handle.newEvents, e)
 				}
 				l.Debug("event to subscriptions", "eID", e.ID, "count", subCount)
-			case subscription := <-subscriptionReqChan:
+			case messages.REQ:
+				subscription, ok := msg.AsREQ()
+				if !ok {
+					l.Error("not REQ", "msg", msg)
+				}
 				l.Debug("subscription over websocket", "subscription", subscription)
 				subscriptionCtx, cancelSubscription := context.WithCancel(ctx) //nolint:govet
 				defer cancelSubscription()
@@ -120,20 +133,15 @@ func main() {
 				)
 				subscriptionEvents := slice.ChanConcatenate(eventsInDatabase, newEvents)
 				go writeFoundEventsToConnection(subscriptionCtx, subscription.ID, subscriptionEvents, conn)
-			case close := <-subscriptionCloseChan:
-				l.Debug("recived close", "subID", close.Subscription)
-				subscriptionHandle, ok := globalOngoingSubscriptions.Load(close.Subscription)
+			case messages.CLOSE:
+				subIDToClose, ok := msg.AsCLOSE()
+				l.Debug("recived close", "subID", subIDToClose)
+				subscriptionHandle, ok := globalOngoingSubscriptions.Load(subIDToClose)
 				if !ok {
 					continue
 				}
 				subscriptionHandle.cancel()
-				globalOngoingSubscriptions.Delete(close.Subscription)
-			case err = <-errChan:
-				l.Debug("recived error", "error", err)
-				if err != nil {
-					l.Error("websocket error", "error", err)
-				}
-				continue
+				globalOngoingSubscriptions.Delete(subIDToClose)
 			}
 		}
 	})
