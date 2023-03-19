@@ -98,14 +98,28 @@ type Event struct {
 	Sig       Signature `json:"sig" bson:"sig"`
 }
 
-func (e Event) UniqueID() string {
-	return string(e.ID)
+func Structure(e Event) StructuredEvent {
+	return StructuredEvent{Event: e}
 }
-func (e Event) UniqueIDFieldName(format string) (string, error) {
+
+func UnStructure(e StructuredEvent) Event {
+	return e.Event
+}
+
+type StructuredEvent struct {
+	Event Event `bson:"event"`
+	//E     []ID     `bson:"#e"`
+	//P     []PubKey `bson:"#e"`
+}
+
+func (e StructuredEvent) UniqueID() string {
+	return string(e.Event.ID)
+}
+func (e StructuredEvent) UniqueIDFieldName(format string) (string, error) {
 	if format == "json" || format == "bson" {
-		return "id", nil
+		return "event.id", nil
 	} else if format == "struct" {
-		return "ID", nil
+		return "Event.ID", nil
 	}
 	return "", fmt.Errorf("only support format json, bson, and struct, not " + format)
 }

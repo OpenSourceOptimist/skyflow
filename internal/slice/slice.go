@@ -81,3 +81,26 @@ func Chunk[T any](slice []T, size int) [][]T {
 	}
 	return res
 }
+
+func MapChan[T any, K any](ctx context.Context, c <-chan T, f func(T) K) <-chan K {
+	res := make(chan K)
+	go func() {
+		for {
+			select {
+			case t, ok := <-c:
+				if !ok {
+					close(res)
+					return // channel closed
+				}
+				select {
+				case res <- f(t):
+				case <-ctx.Done():
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return res
+}

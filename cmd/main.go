@@ -30,7 +30,7 @@ func main() {
 		panic(err)
 	}
 	defer func() { _ = client.Disconnect(context.Background()) }()
-	eventDatabase := &store.Store[event.Event]{
+	eventDatabase := &store.Store[event.StructuredEvent]{
 		Col: client.Database("skyflow").Collection("events"),
 	}
 	subscriptions := &store.Store[messages.Subscription]{
@@ -88,10 +88,8 @@ func main() {
 					continue
 				}
 				l.Debug("event over websocket", "eID", e.ID)
-				_ = eventDatabase.InsertOne(ctx, e)
-				subCount := 0
+				_ = eventDatabase.InsertOne(ctx, event.Structure(e))
 				for subscription := range subscriptions.Find(ctx, messages.SubscriptionFilter(e)) {
-					subCount++
 					handle, ok := globalOngoingSubscriptions.Load(subscription.ID)
 					if !ok {
 						l.Error("subscription not in global map", "subID", subscription.ID)
@@ -100,7 +98,6 @@ func main() {
 					l.Debug("following up", "subID", subscription.ID, "eID", e.ID)
 					slice.AsyncWrite(handle.ctx, handle.newEvents, e)
 				}
-				l.Debug("event to subscriptions", "eID", e.ID, "count", subCount)
 			case messages.REQ:
 				subscription, ok := msg.AsREQ()
 				if !ok {
@@ -127,15 +124,16 @@ func main() {
 					subscriptionCtx,
 					messages.EventFilter(subscription),
 					store.FindOptions{
-						Sort:  primitive.D{{Key: "created_at", Value: -1}},
+						Sort:  primitive.D{{Key: "event.created_at", Value: -1}},
 						Limit: subscription.Limit,
 					},
 				)
-				subscriptionEvents := slice.ChanConcatenate(eventsInDatabase, newEvents)
+				events := slice.MapChan(subscriptionCtx, eventsInDatabase, event.UnStructure)
+				subscriptionEvents := slice.ChanConcatenate(events, newEvents)
 				go writeFoundEventsToConnection(subscriptionCtx, subscription.ID, subscriptionEvents, conn)
 			case messages.CLOSE:
 				subIDToClose, ok := msg.AsCLOSE()
-				l.Debug("recived close", "subID", subIDToClose)
+				l.Debug("recived close over websocket", "subID", subIDToClose)
 				subscriptionHandle, ok := globalOngoingSubscriptions.Load(subIDToClose)
 				if !ok {
 					continue
