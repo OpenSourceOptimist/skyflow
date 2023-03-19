@@ -79,7 +79,7 @@ func TestBasicFiltering(t *testing.T) {
 			conn, closeFunc := newSocket(ctx, t)
 			defer closeFunc()
 
-			publish(ctx, t, validEvent, conn)
+			publish(ctx, t, validEvent, conn, true)
 
 			requestSub(ctx, t, tc.filter, conn)
 
@@ -183,7 +183,7 @@ func TestTagFiltering(t *testing.T) {
 			conn, closer := newSocket(ctx, t)
 			defer closer()
 			for _, e := range tc.allEvents {
-				publish(ctx, t, e, conn)
+				publish(ctx, t, e, conn, true)
 			}
 			sub := requestSub(ctx, t, tc.filter, conn)
 			reciviedEvents := slice.ReadSlice(

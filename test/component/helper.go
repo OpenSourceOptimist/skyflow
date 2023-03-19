@@ -38,11 +38,13 @@ func toEvent(ne nostr.Event) event.Event {
 
 }
 
-func publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.Conn) {
+func publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.Conn, ensure bool) {
 	reqBytes, err := json.Marshal([]interface{}{"EVENT", e})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
-	ensureExists(ctx, t, e.ID, time.Second)
+	if ensure {
+		ensureExists(ctx, t, e.ID, time.Second)
+	}
 }
 
 func ensureExists(ctx context.Context, t *testing.T, id event.ID, maxWait time.Duration) {
