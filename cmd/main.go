@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"sync"
@@ -40,32 +39,33 @@ func main() {
 	ctx := context.Background()
 	for err != nil {
 		err := client.Ping(ctx, nil)
-		log.Error("mongo ping", "error", err)
+		logrus.Error("mongo ping", "error", err.Error())
 		time.Sleep(time.Second)
 	}
 
 	globalOngoingSubscriptions := NewSyncMap[messages.SubscriptionID, SubscriptionHandle]()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		session := uuid.NewString()[:5]
-		log.Debug("handling new request", "session", session)
+		l := &log.Logger{Session: uuid.NewString()[:5]}
+		l.Debug("handling new request")
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Error("error setting up websocket", "error", err, "session", session)
+			l.Error("error setting up websocket", "error", err)
 			return
 		}
 		defer func() {
-			log.Debug("websocket closed", "session", session)
+			l.Debug("websocket closed")
 			conn.Close(websocket.StatusInternalError, "thanks, bye")
 		}()
 		ctx := r.Context()
 		subscriptionsAssosiatedWithRequest := make([]messages.SubscriptionID, 0)
 		eventChan, subscriptionReqChan, subscriptionCloseChan, errChan := messages.ListenForMessages(ctx, conn)
 		for {
+			l.IncrementSession()
 			select {
 			case <-ctx.Done():
-				log.Info("ctx cancelled, closing websocket", "session", session)
+				l.Info("ctx cancelled, closing websocket")
 				conn.Close(websocket.StatusNormalClosure, "session cancelled by user")
 				for _, subscriptionID := range subscriptionsAssosiatedWithRequest {
 					subscription, ok := globalOngoingSubscriptions.Load(subscriptionID)
@@ -78,24 +78,22 @@ func main() {
 				}
 				return //nolint:govet
 			case e := <-eventChan:
-				log.Debug("recived event", "eID", e.ID, "session", session)
+				l.Debug("event over websocket", "eID", e.ID)
 				_ = eventDatabase.InsertOne(ctx, e)
 				subCount := 0
 				for subscription := range subscriptions.Find(ctx, messages.SubscriptionFilter(e)) {
 					subCount++
 					handle, ok := globalOngoingSubscriptions.Load(subscription.ID)
 					if !ok {
-						log.Error("subscription not in global map",
-							"subID", subscription.ID, "session", session)
+						l.Error("subscription not in global map", "subID", subscription.ID)
 						continue
 					}
-					log.Debug("following up",
-						"subID", subscription.ID, "eID", e.ID, "session", session)
+					l.Debug("following up", "subID", subscription.ID, "eID", e.ID)
 					slice.AsyncWrite(handle.ctx, handle.newEvents, e)
 				}
-				log.Debug("event to subscriptions", "eID", e.ID, "count", subCount)
+				l.Debug("event to subscriptions", "eID", e.ID, "count", subCount)
 			case subscription := <-subscriptionReqChan:
-				log.Debug("recived subscription: ", "subscription", subscription)
+				l.Debug("subscription over websocket", "subscription", subscription)
 				subscriptionCtx, cancelSubscription := context.WithCancel(ctx) //nolint:govet
 				defer cancelSubscription()
 				if _, ok := globalOngoingSubscriptions.Load(subscription.ID); ok {
@@ -123,7 +121,7 @@ func main() {
 				subscriptionEvents := slice.ChanConcatenate(eventsInDatabase, newEvents)
 				go writeFoundEventsToConnection(subscriptionCtx, subscription.ID, subscriptionEvents, conn)
 			case close := <-subscriptionCloseChan:
-				log.Debug("recived close", "subID", close.Subscription)
+				l.Debug("recived close", "subID", close.Subscription)
 				subscriptionHandle, ok := globalOngoingSubscriptions.Load(close.Subscription)
 				if !ok {
 					continue
@@ -131,15 +129,15 @@ func main() {
 				subscriptionHandle.cancel()
 				globalOngoingSubscriptions.Delete(close.Subscription)
 			case err = <-errChan:
-				log.Debug("recived error", "error", err)
+				l.Debug("recived error", "error", err)
 				if err != nil {
-					log.Error("websocket error", "error", err)
+					l.Error("websocket error", "error", err)
 				}
 				continue
 			}
 		}
 	})
-	log.Info("server stopping", "error", http.ListenAndServe(":80", handler).Error())
+	logrus.Info("server stopping: " + http.ListenAndServe(":80", handler).Error())
 }
 
 func writeFoundEventsToConnection(
@@ -147,19 +145,13 @@ func writeFoundEventsToConnection(
 	for {
 		select {
 		case <-ctx.Done():
-			logrus.Debug("request context cancelled", "subId", sub)
 			return
 		case e := <-foundEvents:
 			eventMsg, err := json.Marshal([]any{"EVENT", sub, e})
 			if err != nil {
-				logrus.Debug("marshalling eventMsg to send", "subId", sub, "error", err)
 				continue
 			}
-			err = connection.Write(ctx, websocket.MessageText, eventMsg)
-			if err != nil {
-				logrus.Error("request attemp writing to websocket", "error", err)
-			}
-			logrus.Debug(fmt.Sprintf("eventID %s written to subscriptionID %s", e.ID, sub))
+			connection.Write(ctx, websocket.MessageText, eventMsg)
 		}
 	}
 }
