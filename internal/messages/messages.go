@@ -57,21 +57,14 @@ func SubscriptionFilter(e event.Event) primitive.M {
 				M{"kinds": e.Kind},
 				M{"kinds": primitive.Null{}},
 			}},
-			M{"$or": A{
-				M{"$or": slice.Map(
-					slice.FindAll(e.Tags, event.E),
-					func(id event.ID) M { return M{"tag_e": id} },
-				)},
+			M{"$or": append(
+				slice.Map(slice.FindAll(e.Tags, event.E), func(id event.ID) M { return M{"tag_e": id} }),
 				M{"tag_e": primitive.Null{}},
-			}},
-			M{"$or": A{
-				M{"$or": slice.Map(
-					slice.FindAll(e.Tags, event.P),
-					func(key event.PubKey) M { return M{"tag_p": key} },
-				)},
-				M{"tag_p": primitive.Null{}},
-			}},
-			// TODO: missing since, untill
+			)},
+			M{"$or": append(
+				slice.Map(slice.FindAll(e.Tags, event.P), func(p event.PubKey) M { return M{"tag_p": p} }),
+				M{"tag_e": primitive.Null{}},
+			)},
 		},
 	}
 }
