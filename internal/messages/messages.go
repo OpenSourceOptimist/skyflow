@@ -233,9 +233,15 @@ func ListenForMessages(ctx context.Context, r MessageReader) <-chan WebsocketMes
 					result <- WebsocketMessage{Err: fmt.Errorf("wrong close message lenght: %s", string(data))}
 					continue
 				}
+				var subscriptionID SubscriptionID
+				err = json.Unmarshal(message[1], &subscriptionID)
+				if err != nil {
+					result <- WebsocketMessage{Err: fmt.Errorf("unmatshal sub id: %w", err)}
+					continue
+				}
 				go func(subID SubscriptionID) {
 					result <- WebsocketMessage{MsgType: CLOSE, Value: subID}
-				}(SubscriptionID(message[1]))
+				}(subscriptionID)
 			}
 		}
 	}()
