@@ -73,9 +73,10 @@ func TestClosing(t *testing.T) {
 	defer closer()
 	subID1 := requestSub(ctx, t, messages.Subscription{}, conn)
 	cancelSub(ctx, t, subID1, conn)
-	publish(ctx, t, validEvent, conn, false)
+	publish(ctx, t, validEvent, conn)
 	subID2 := requestSub(ctx, t, messages.Subscription{}, conn)
-	sub, e := readEvent(ctx, t, conn)
+	sub, e, err := readEvent(ctx, t, conn)
+	require.NoError(t, err)
 	require.Equal(t, subID2, sub)
 	require.Equal(t, validEvent.ID, e.ID)
 }

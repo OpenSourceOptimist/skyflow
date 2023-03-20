@@ -35,25 +35,17 @@ func toEvent(ne nostr.Event) event.Event {
 		Content:   ne.Content,
 		Sig:       event.Signature(ne.Sig),
 	}
-
 }
 
-func publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.Conn, ensure bool) {
+func publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.Conn) {
 	reqBytes, err := json.Marshal([]interface{}{"EVENT", e})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
-	if ensure {
-		ensureExists(ctx, t, e.ID, time.Second)
-	}
 }
 
-func ensureExists(ctx context.Context, t *testing.T, id event.ID, maxWait time.Duration) {
-	conn, subConnCloser := newSocket(ctx, t)
-	defer subConnCloser()
+func ensureExists(ctx context.Context, t *testing.T, id event.ID, maxWait time.Duration, conn *websocket.Conn) {
 	sub := requestSub(ctx, t, messages.Subscription{IDs: []event.ID{id}}, conn)
 	timeout := time.After(maxWait)
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	subscription := listenForEventsOnSub(ctx, t, conn, sub)
 	for {
 		select {
@@ -82,7 +74,11 @@ func listenForEventsOnSub(
 	events := make(chan event.Event)
 	go func() {
 		for {
-			id, e := readEvent(ctx, t, conn)
+			id, e, err := readEvent(ctx, t, conn)
+			if err != nil {
+				close(events)
+				return
+			}
 			if id != sub {
 				continue
 			}
@@ -95,13 +91,11 @@ func listenForEventsOnSub(
 	}()
 	return events
 }
-
-func readEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) (messages.SubscriptionID, event.Event) {
+func readEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) (messages.SubscriptionID, event.Event, error) {
 	msgType, responseBytes, err := conn.Read(ctx)
-	if ctx.Err() != nil {
-		return messages.SubscriptionID(""), event.Event{}
+	if err != nil {
+		return messages.SubscriptionID(""), event.Event{}, err
 	}
-	require.NoError(t, err)
 	require.Equal(t, websocket.MessageText, msgType)
 
 	var eventDataMsg []json.RawMessage
@@ -115,7 +109,7 @@ func readEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) (message
 	var resultEvent event.Event
 	require.NoError(t, json.Unmarshal(eventDataMsg[2], &resultEvent))
 	require.NoError(t, event.VerifyEvent(resultEvent), "verifying validity of recived event")
-	return subscriptionID, resultEvent
+	return subscriptionID, resultEvent, nil
 }
 
 func cancelSub(ctx context.Context, t *testing.T, subID messages.SubscriptionID, conn *websocket.Conn) {

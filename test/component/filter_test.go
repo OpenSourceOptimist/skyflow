@@ -79,7 +79,7 @@ func TestBasicFiltering(t *testing.T) {
 			conn, closeFunc := newSocket(ctx, t)
 			defer closeFunc()
 
-			publish(ctx, t, validEvent, conn, true)
+			publish(ctx, t, validEvent, conn)
 
 			requestSub(ctx, t, tc.filter, conn)
 
@@ -117,7 +117,7 @@ func TestFiltering(t *testing.T) {
 			recivedEventIDs: []string{createdAt400.ID, createdAt300.ID, createdAt200.ID},
 		},
 		{
-			name:            "Filter on pubkeys referenced in p tag",
+			name:            "Filter on pubkeys referenced in p tag with go-nostr library",
 			allEvents:       []nostr.Event{referencingPub1, referencingPub2, createdAt100},
 			filter:          nostr.Filter{Tags: nostr.TagMap{"p": []string{pub1.String()}}},
 			recivedEventIDs: []string{referencingPub1.ID},
@@ -183,7 +183,7 @@ func TestTagFiltering(t *testing.T) {
 			conn, closer := newSocket(ctx, t)
 			defer closer()
 			for _, e := range tc.allEvents {
-				publish(ctx, t, e, conn, true)
+				publish(ctx, t, e, conn)
 			}
 			sub := requestSub(ctx, t, tc.filter, conn)
 			reciviedEvents := slice.ReadSlice(
