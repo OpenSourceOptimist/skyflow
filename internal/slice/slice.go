@@ -104,3 +104,7 @@ func MapChan[T any, K any](ctx context.Context, c <-chan T, f func(T) K) <-chan 
 	}()
 	return res
 }
+
+func AsAny[T any](slice []T) []any {
+	return Map(slice, func(t T) any { return t })
+}

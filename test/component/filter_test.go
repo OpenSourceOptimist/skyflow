@@ -81,7 +81,7 @@ func TestBasicFiltering(t *testing.T) {
 
 			publish(ctx, t, validEvent, conn)
 
-			requestSub(ctx, t, tc.filter, conn)
+			requestSub(ctx, t, conn, tc.filter)
 
 			ctx, cancel = context.WithTimeout(ctx, time.Second)
 			defer cancel()
@@ -155,19 +155,19 @@ func TestMoreComplicatedFiltering(t *testing.T) {
 	testcases := []struct {
 		name            string
 		allEvents       []event.Event
-		filter          messages.Subscription
+		filter          []messages.Subscription
 		recivedEventIDs []event.ID
 	}{
 		{
 			name:            "Enfoce limit, sorted on created_at",
 			allEvents:       []event.Event{createdAt100, createdAt200, createdAt300, createdAt400},
-			filter:          messages.Subscription{Limit: 3},
+			filter:          []messages.Subscription{{Limit: 3}},
 			recivedEventIDs: []event.ID{createdAt400.ID, createdAt300.ID, createdAt200.ID},
 		},
 		{
 			name:            "Filter on pubkeys referenced in p tag",
 			allEvents:       []event.Event{referencingPub1, referencingPub2, createdAt100},
-			filter:          messages.Subscription{P: []event.PubKey{event.PubKey(pub1)}},
+			filter:          []messages.Subscription{{P: []event.PubKey{event.PubKey(pub1)}}},
 			recivedEventIDs: []event.ID{referencingPub1.ID},
 		},
 	}
@@ -181,7 +181,7 @@ func TestMoreComplicatedFiltering(t *testing.T) {
 			for _, e := range tc.allEvents {
 				publish(ctx, t, e, conn)
 			}
-			sub := requestSub(ctx, t, tc.filter, conn)
+			sub := requestSub(ctx, t, conn, tc.filter...)
 			reciviedEvents := slice.ReadSlice(
 				listenForEventsOnSub(ctx, t, conn, sub),
 				500*time.Millisecond,

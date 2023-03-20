@@ -44,7 +44,7 @@ func publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.C
 }
 
 func ensureExists(ctx context.Context, t *testing.T, id event.ID, maxWait time.Duration, conn *websocket.Conn) {
-	sub := requestSub(ctx, t, messages.Subscription{IDs: []event.ID{id}}, conn)
+	sub := requestSub(ctx, t, conn, messages.Subscription{IDs: []event.ID{id}})
 	timeout := time.After(maxWait)
 	subscription := listenForEventsOnSub(ctx, t, conn, sub)
 	for {
@@ -60,9 +60,9 @@ func ensureExists(ctx context.Context, t *testing.T, id event.ID, maxWait time.D
 	}
 }
 
-func requestSub(ctx context.Context, t *testing.T, filter messages.Subscription, conn *websocket.Conn) messages.SubscriptionID {
+func requestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filter ...messages.Subscription) messages.SubscriptionID {
 	subID := uuid.NewString()
-	bytes, err := json.Marshal([]interface{}{"REQ", subID, filter})
+	bytes, err := json.Marshal(append([]interface{}{"REQ", subID}, slice.AsAny(filter)...))
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, bytes))
 	return messages.SubscriptionID(subID)
