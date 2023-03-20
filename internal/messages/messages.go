@@ -71,35 +71,25 @@ func SubscriptionFilter(e event.Event) primitive.M {
 
 // MongoDB filter for StructuredEvents matching filter.
 func EventFilter(filter Subscription) primitive.M {
-	var filters []primitive.M
+	var filters []M
 	if len(filter.IDs) > 0 {
-		filters = append(filters, primitive.M{"event.id": primitive.M{"$in": filter.IDs}})
+		filters = append(filters, M{"event.id": primitive.M{"$in": filter.IDs}})
 	}
 	if len(filter.Authors) > 0 {
-		filters = append(filters, primitive.M{"event.pubkey": primitive.M{"$in": filter.Authors}})
+		filters = append(filters, M{"event.pubkey": primitive.M{"$in": filter.Authors}})
 	}
 	if len(filter.Kinds) > 0 {
-		filters = append(filters, primitive.M{"event.kind": primitive.M{"$in": filter.Kinds}})
+		filters = append(filters, M{"event.kind": primitive.M{"$in": filter.Kinds}})
 	}
-	var createdAtConstraints []primitive.M
 	if filter.Since != 0 {
-		createdAtConstraints = append(createdAtConstraints, primitive.M{"event.created_at": primitive.M{"$gt": filter.Since}})
+		filters = append(filters, M{"event.created_at": primitive.M{"$gt": filter.Since}})
 	}
 	if filter.Until != 0 {
-		createdAtConstraints = append(createdAtConstraints, primitive.M{"event.created_at": primitive.M{"$lt": filter.Until}})
+		filters = append(filters, M{"event.created_at": primitive.M{"$lt": filter.Until}})
 	}
 	query := primitive.M{}
-	if len(filters) > 0 && len(createdAtConstraints) == 0 {
-		query = primitive.M{"$or": filters}
-	}
-	if len(filters) == 0 && len(createdAtConstraints) > 0 {
-		query = primitive.M{"$and": createdAtConstraints}
-	}
-	if len(filters) > 0 && len(createdAtConstraints) > 0 {
-		query = primitive.M{"$and": primitive.A{
-			primitive.M{"$and": createdAtConstraints},
-			primitive.M{"$or": filters},
-		}}
+	if len(filters) > 0 {
+		query = primitive.M{"$and": filters}
 	}
 	return query
 }
