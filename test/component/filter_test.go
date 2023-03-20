@@ -143,18 +143,15 @@ func TestFiltering(t *testing.T) {
 	}
 }
 
-func TestTagFiltering(t *testing.T) {
-	if true {
-		return
-	}
+func TestMoreComplicatedFiltering(t *testing.T) {
 	createdAt100 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(100, 0)}))
 	createdAt200 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(200, 0)}))
 	createdAt300 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(300, 0)}))
 	createdAt400 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(400, 0)}))
-	//_, pub1 := NewKeyPair(t)
-	//_, pub2 := NewKeyPair(t)
-	//referencingPub1 := toEvent(NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub1.String(), ""}}}))
-	//referencingPub2 := toEvent(NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub2.String(), ""}}}))
+	_, pub1 := NewKeyPair(t)
+	_, pub2 := NewKeyPair(t)
+	referencingPub1 := toEvent(NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub1.String(), ""}}}))
+	referencingPub2 := toEvent(NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub2.String(), ""}}}))
 	testcases := []struct {
 		name            string
 		allEvents       []event.Event
@@ -167,17 +164,16 @@ func TestTagFiltering(t *testing.T) {
 			filter:          messages.Subscription{Limit: 3},
 			recivedEventIDs: []event.ID{createdAt400.ID, createdAt300.ID, createdAt200.ID},
 		},
-		/*{
+		{
 			name:            "Filter on pubkeys referenced in p tag",
 			allEvents:       []event.Event{referencingPub1, referencingPub2, createdAt100},
-			filter:          messages.RequestFilter{P: []event.PubKey{event.PubKey(pub1)}},
-			recivedEventIDs: []event.EventID{referencingPub1.ID},
-		},*/
-
+			filter:          messages.Subscription{P: []event.PubKey{event.PubKey(pub1)}},
+			recivedEventIDs: []event.ID{referencingPub1.ID},
+		},
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			//defer clearMongo()
+			defer clearMongo()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			conn, closer := newSocket(ctx, t)

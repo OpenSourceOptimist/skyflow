@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
 )
@@ -99,7 +100,11 @@ type Event struct {
 }
 
 func Structure(e Event) StructuredEvent {
-	return StructuredEvent{Event: e}
+	return StructuredEvent{
+		Event: e,
+		E:     slice.FindAll(e.Tags, E),
+		P:     slice.FindAll(e.Tags, P),
+	}
 }
 
 func UnStructure(e StructuredEvent) Event {
@@ -107,9 +112,9 @@ func UnStructure(e StructuredEvent) Event {
 }
 
 type StructuredEvent struct {
-	Event Event `bson:"event"`
-	//E     []ID     `bson:"#e"`
-	//P     []PubKey `bson:"#e"`
+	Event Event    `bson:"event"`
+	E     []ID     `bson:"#e"`
+	P     []PubKey `bson:"#p"`
 }
 
 func (e StructuredEvent) UniqueID() string {

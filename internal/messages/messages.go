@@ -19,8 +19,8 @@ type Subscription struct {
 	IDs     []event.ID      `json:"ids" bson:"ids"`
 	Authors []event.PubKey  `json:"authors" bson:"authors"`
 	Kinds   []event.Kind    `json:"kinds" bson:"kinds"`
-	E       []event.ID      `json:"#e" bson:"tag_e"`
-	P       []event.PubKey  `json:"#p" bson:"tag_p"`
+	E       []event.ID      `json:"#e" bson:"#e"`
+	P       []event.PubKey  `json:"#p" bson:"#p"`
 	Since   event.Timestamp `json:"since" bson:"since"`
 	Until   event.Timestamp `json:"until" bson:"until"`
 	Limit   int64           `json:"limit" bson:"limit"`
@@ -58,12 +58,12 @@ func SubscriptionFilter(e event.Event) primitive.M {
 				M{"kinds": primitive.Null{}},
 			}},
 			M{"$or": append(
-				slice.Map(slice.FindAll(e.Tags, event.E), func(id event.ID) M { return M{"tag_e": id} }),
-				M{"tag_e": primitive.Null{}},
+				slice.Map(slice.FindAll(e.Tags, event.E), func(id event.ID) M { return M{"#e": id} }),
+				M{"#e": primitive.Null{}},
 			)},
 			M{"$or": append(
-				slice.Map(slice.FindAll(e.Tags, event.P), func(p event.PubKey) M { return M{"tag_p": p} }),
-				M{"tag_e": primitive.Null{}},
+				slice.Map(slice.FindAll(e.Tags, event.P), func(p event.PubKey) M { return M{"#p": p} }),
+				M{"#e": primitive.Null{}},
 			)},
 		},
 	}
@@ -80,6 +80,12 @@ func EventFilter(filter Subscription) primitive.M {
 	}
 	if len(filter.Kinds) > 0 {
 		filters = append(filters, M{"event.kind": primitive.M{"$in": filter.Kinds}})
+	}
+	if len(filter.E) > 0 {
+		filters = append(filters, M{"$or": slice.Map(filter.E, func(id event.ID) M { return M{"#e": id} })})
+	}
+	if len(filter.P) > 0 {
+		filters = append(filters, M{"$or": slice.Map(filter.P, func(npub event.PubKey) M { return M{"#p": npub} })})
 	}
 	if filter.Since != 0 {
 		filters = append(filters, M{"event.created_at": primitive.M{"$gt": filter.Since}})
