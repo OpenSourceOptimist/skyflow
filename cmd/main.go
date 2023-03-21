@@ -70,15 +70,19 @@ func main() {
 				l.Info("ctx cancelled, closing websocket")
 				conn.Close(websocket.StatusNormalClosure, "session cancelled by user")
 				for _, subscriptionID := range subscriptionsAssosiatedWithRequest {
-					subscription, ok := globalOngoingSubscriptions.Load(subscriptionID)
+					subscriptionHandler, ok := globalOngoingSubscriptions.Load(subscriptionID)
 					if !ok {
 						continue
 					}
-					subscription.cancel()
+					subscriptionHandler.Cancel()
 					globalOngoingSubscriptions.Delete(subscriptionID)
-					subscriptions.DeleteOne(ctx, subscription.filter)
+					subscriptions.DeleteOne(ctx, subscriptionHandler.Details)
 				}
 				return //nolint:govet
+			}
+			if msg.Err != nil {
+				l.Error("error", err)
+				continue
 			}
 			switch msg.MsgType {
 			case messages.EVENT:
@@ -96,7 +100,7 @@ func main() {
 						continue
 					}
 					l.Debug("following up", "subID", subscription.ID, "eID", e.ID)
-					slice.AsyncWrite(handle.ctx, handle.newEvents, e)
+					slice.AsyncWrite(handle.Ctx, handle.NewEvents, e)
 				}
 			case messages.REQ:
 				subscription, ok := msg.AsREQ()
@@ -114,20 +118,24 @@ func main() {
 				globalOngoingSubscriptions.Store(
 					subscription.ID,
 					SubscriptionHandle{
-						ctx:       subscriptionCtx,
-						cancel:    cancelSubscription,
-						newEvents: newEvents,
-						filter:    subscription,
+						Ctx:       subscriptionCtx,
+						Cancel:    cancelSubscription,
+						NewEvents: newEvents,
+						Details:   subscription,
 					},
 				)
-				eventsInDatabase := eventDatabase.Find(
-					subscriptionCtx,
-					messages.EventFilter(subscription),
-					store.FindOptions{
-						Sort:  primitive.D{{Key: "event.created_at", Value: -1}},
-						Limit: subscription.Limit,
-					},
-				)
+				eventsPerFilter := slice.Map(subscription.Filters,
+					func(filter messages.Filter) <-chan event.StructuredEvent {
+						return eventDatabase.Find(
+							subscriptionCtx,
+							messages.EventFilter(filter),
+							store.FindOptions{
+								Sort:  primitive.D{{Key: "event.created_at", Value: -1}},
+								Limit: filter.Limit,
+							},
+						)
+					})
+				eventsInDatabase := slice.Merge(subscriptionCtx, eventsPerFilter...)
 				events := slice.MapChan(subscriptionCtx, eventsInDatabase, event.UnStructure)
 				subscriptionEvents := slice.ChanConcatenate(events, newEvents)
 				go writeFoundEventsToConnection(subscriptionCtx, subscription.ID, subscriptionEvents, conn)
@@ -138,7 +146,7 @@ func main() {
 				if !ok {
 					continue
 				}
-				subscriptionHandle.cancel()
+				subscriptionHandle.Cancel()
 				globalOngoingSubscriptions.Delete(subIDToClose)
 			}
 		}
@@ -163,10 +171,10 @@ func writeFoundEventsToConnection(
 }
 
 type SubscriptionHandle struct {
-	ctx       context.Context
-	cancel    func()
-	newEvents chan<- event.Event
-	filter    messages.Subscription
+	Ctx       context.Context
+	Cancel    func()
+	NewEvents chan<- event.Event
+	Details   messages.Subscription
 }
 
 func NewSyncMap[K comparable, T any]() SyncMap[K, T] {

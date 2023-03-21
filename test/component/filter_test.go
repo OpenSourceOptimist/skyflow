@@ -16,57 +16,57 @@ func TestBasicFiltering(t *testing.T) {
 
 	testcases := []struct {
 		name             string
-		filter           messages.Subscription
+		filter           messages.Filter
 		expectingMessage bool
 	}{
 		{
 			name:             "eventID filter misses",
-			filter:           messages.Subscription{IDs: []event.ID{"randomEventID"}},
+			filter:           messages.Filter{IDs: []event.ID{"randomEventID"}},
 			expectingMessage: false,
 		},
 		{
 			name:             "eventID filter matches",
-			filter:           messages.Subscription{IDs: []event.ID{validEvent.ID}},
+			filter:           messages.Filter{IDs: []event.ID{validEvent.ID}},
 			expectingMessage: true,
 		},
 		{
 			name:             "eventID filter misses",
-			filter:           messages.Subscription{Authors: []event.PubKey{"randomPubkey"}},
+			filter:           messages.Filter{Authors: []event.PubKey{"randomPubkey"}},
 			expectingMessage: false,
 		},
 		{
 			name:             "eventID filter matches",
-			filter:           messages.Subscription{Authors: []event.PubKey{validEvent.PubKey}},
+			filter:           messages.Filter{Authors: []event.PubKey{validEvent.PubKey}},
 			expectingMessage: true,
 		},
 		{
 			name:             "kind filter misses",
-			filter:           messages.Subscription{Kinds: []event.Kind{24343}},
+			filter:           messages.Filter{Kinds: []event.Kind{24343}},
 			expectingMessage: false,
 		},
 		{
 			name:             "kind filter matches",
-			filter:           messages.Subscription{Kinds: []event.Kind{validEvent.Kind}},
+			filter:           messages.Filter{Kinds: []event.Kind{validEvent.Kind}},
 			expectingMessage: true,
 		},
 		{
 			name:             "since filter matches",
-			filter:           messages.Subscription{Since: validEvent.CreatedAt - 1},
+			filter:           messages.Filter{Since: validEvent.CreatedAt - 1},
 			expectingMessage: true,
 		},
 		{
 			name:             "since filter does not matche",
-			filter:           messages.Subscription{Since: validEvent.CreatedAt + 1},
+			filter:           messages.Filter{Since: validEvent.CreatedAt + 1},
 			expectingMessage: false,
 		},
 		{
 			name:             "until filter matches",
-			filter:           messages.Subscription{Until: validEvent.CreatedAt + 1},
+			filter:           messages.Filter{Until: validEvent.CreatedAt + 1},
 			expectingMessage: true,
 		},
 		{
 			name:             "until filter does not matche",
-			filter:           messages.Subscription{Until: validEvent.CreatedAt - 1},
+			filter:           messages.Filter{Until: validEvent.CreatedAt - 1},
 			expectingMessage: false,
 		},
 	}
@@ -155,20 +155,33 @@ func TestMoreComplicatedFiltering(t *testing.T) {
 	testcases := []struct {
 		name            string
 		allEvents       []event.Event
-		filter          []messages.Subscription
+		filter          []messages.Filter
 		recivedEventIDs []event.ID
+		requireOrder    bool
 	}{
 		{
 			name:            "Enfoce limit, sorted on created_at",
 			allEvents:       []event.Event{createdAt100, createdAt200, createdAt300, createdAt400},
-			filter:          []messages.Subscription{{Limit: 3}},
+			filter:          []messages.Filter{{Limit: 3}},
 			recivedEventIDs: []event.ID{createdAt400.ID, createdAt300.ID, createdAt200.ID},
+			requireOrder:    true,
 		},
 		{
 			name:            "Filter on pubkeys referenced in p tag",
 			allEvents:       []event.Event{referencingPub1, referencingPub2, createdAt100},
-			filter:          []messages.Subscription{{P: []event.PubKey{event.PubKey(pub1)}}},
+			filter:          []messages.Filter{{P: []event.PubKey{event.PubKey(pub1)}}},
 			recivedEventIDs: []event.ID{referencingPub1.ID},
+			requireOrder:    true,
+		},
+		{
+			name:      "OR",
+			allEvents: []event.Event{referencingPub1, referencingPub2, createdAt100, createdAt200},
+			filter: []messages.Filter{
+				{P: []event.PubKey{event.PubKey(pub1)}},
+				{IDs: []event.ID{createdAt100.ID}},
+			},
+			recivedEventIDs: []event.ID{createdAt100.ID, referencingPub1.ID},
+			requireOrder:    false,
 		},
 	}
 	for _, tc := range testcases {
@@ -187,7 +200,11 @@ func TestMoreComplicatedFiltering(t *testing.T) {
 				500*time.Millisecond,
 			)
 			recivedEventIDs := slice.Map(reciviedEvents, func(e event.Event) event.ID { return e.ID })
-			require.Equal(t, tc.recivedEventIDs, recivedEventIDs)
+			if tc.requireOrder {
+				require.Equal(t, tc.recivedEventIDs, recivedEventIDs)
+			} else {
+				require.ElementsMatch(t, tc.recivedEventIDs, recivedEventIDs)
+			}
 		})
 	}
 }

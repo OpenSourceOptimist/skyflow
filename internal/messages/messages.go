@@ -14,8 +14,14 @@ import (
 	"nhooyr.io/websocket"
 )
 
+type SubscriptionID string
+
 type Subscription struct {
-	ID      SubscriptionID  `json:"id" bson:"id"`
+	ID      SubscriptionID `json:"id" bson:"id"`
+	Filters []Filter       `bson:"filter"`
+}
+
+type Filter struct {
 	IDs     []event.ID      `json:"ids" bson:"ids"`
 	Authors []event.PubKey  `json:"authors" bson:"authors"`
 	Kinds   []event.Kind    `json:"kinds" bson:"kinds"`
@@ -46,31 +52,31 @@ func SubscriptionFilter(e event.Event) primitive.M {
 	return primitive.M{
 		"$and": A{
 			M{"$or": A{
-				M{"ids": e.ID},
-				M{"ids": primitive.Null{}},
+				M{"filter.ids": e.ID},
+				M{"filter.ids": primitive.Null{}},
 			}},
 			M{"$or": A{
-				M{"authors": e.PubKey},
-				M{"authors": primitive.Null{}},
+				M{"filter.authors": e.PubKey},
+				M{"filter.authors": primitive.Null{}},
 			}},
 			M{"$or": A{
-				M{"kinds": e.Kind},
-				M{"kinds": primitive.Null{}},
+				M{"filter.kinds": e.Kind},
+				M{"filter.kinds": primitive.Null{}},
 			}},
 			M{"$or": append(
-				slice.Map(slice.FindAll(e.Tags, event.E), func(id event.ID) M { return M{"#e": id} }),
-				M{"#e": primitive.Null{}},
+				slice.Map(slice.FindAll(e.Tags, event.E), func(id event.ID) M { return M{"filter.#e": id} }),
+				M{"filter.#e": primitive.Null{}},
 			)},
 			M{"$or": append(
-				slice.Map(slice.FindAll(e.Tags, event.P), func(p event.PubKey) M { return M{"#p": p} }),
-				M{"#e": primitive.Null{}},
+				slice.Map(slice.FindAll(e.Tags, event.P), func(p event.PubKey) M { return M{"filter.#p": p} }),
+				M{"filter.#e": primitive.Null{}},
 			)},
 		},
 	}
 }
 
 // MongoDB filter for StructuredEvents matching filter.
-func EventFilter(filter Subscription) primitive.M {
+func EventFilter(filter Filter) primitive.M {
 	var filters []M
 	if len(filter.IDs) > 0 {
 		filters = append(filters, M{"event.id": primitive.M{"$in": filter.IDs}})
@@ -99,8 +105,6 @@ func EventFilter(filter Subscription) primitive.M {
 	}
 	return query
 }
-
-type SubscriptionID string
 
 type MessageReader interface {
 	Read(ctx context.Context) (websocket.MessageType, []byte, error)
@@ -163,6 +167,7 @@ func ListenForMessages(ctx context.Context, r MessageReader) <-chan WebsocketMes
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
+			logrus.Debug(string(data))
 			if socketMsgType != websocket.MessageText {
 				result <- WebsocketMessage{Err: fmt.Errorf("unexpected message type: %d", socketMsgType)}
 				continue
@@ -204,7 +209,7 @@ func ListenForMessages(ctx context.Context, r MessageReader) <-chan WebsocketMes
 					result <- WebsocketMessage{MsgType: EVENT, Value: eventToSend}
 				}(e)
 			case "REQ":
-				if len(message) != 3 {
+				if len(message) < 3 {
 					result <- WebsocketMessage{Err: fmt.Errorf("wrong event request lenght: %s", string(data))}
 					continue
 				}
@@ -214,13 +219,18 @@ func ListenForMessages(ctx context.Context, r MessageReader) <-chan WebsocketMes
 					result <- WebsocketMessage{Err: fmt.Errorf("unmatshal sub id: %w", err)}
 					continue
 				}
-				var subscription Subscription
-				err := json.Unmarshal(message[2], &subscription)
-				if err != nil {
-					result <- WebsocketMessage{Err: fmt.Errorf("unmarshal request message: %s", string(data))}
-					continue
+				subscription := Subscription{ID: subID}
+				filters := make([]Filter, 0, len(message[2:]))
+				for _, element := range message[2:] {
+					var filter Filter
+					err := json.Unmarshal(element, &filter)
+					if err != nil {
+						result <- WebsocketMessage{Err: fmt.Errorf("unmarshal request message: %s", string(data))}
+						continue //TODO: bug alert
+					}
+					filters = append(filters, filter)
 				}
-				subscription.ID = subID
+				subscription.Filters = filters
 				go func(sub Subscription) {
 					result <- WebsocketMessage{MsgType: REQ, Value: sub}
 				}(subscription)

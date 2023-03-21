@@ -108,3 +108,60 @@ func MapChan[T any, K any](ctx context.Context, c <-chan T, f func(T) K) <-chan 
 func AsAny[T any](slice []T) []any {
 	return Map(slice, func(t T) any { return t })
 }
+
+func copyChan[T any](ctx context.Context, from <-chan T, to chan<- T) {
+	for {
+		var t T
+		var ok bool
+		select {
+		case <-ctx.Done():
+			return
+		case t, ok = <-from:
+		}
+		if !ok {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case to <- t:
+		}
+	}
+}
+
+func merge[T any](ctx context.Context, A <-chan T, B <-chan T) <-chan T {
+	res := make(chan T)
+	go copyChan(ctx, A, res)
+	go copyChan(ctx, B, res)
+	go func() {
+		<-ctx.Done()
+		close(res)
+	}()
+	return res
+}
+
+func Reduce[T any, K any](slice []T, init K, reduction func(K, T) K) K {
+	res := init
+	for _, t := range slice {
+		res = reduction(res, t)
+	}
+	return res
+}
+
+func Merge[T any](ctx context.Context, c ...<-chan T) <-chan T {
+	res := make(chan T)
+	if len(c) == 0 {
+		close(res)
+		return res
+	}
+	if len(c) == 1 {
+		return c[0]
+	}
+	return Reduce(
+		c[1:],
+		c[0],
+		func(merged <-chan T, next <-chan T) <-chan T {
+			return merge(ctx, merged, next)
+		},
+	)
+}

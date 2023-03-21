@@ -39,7 +39,7 @@ func TestBasicNIP01Flow(t *testing.T) {
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 
 	subscriptionID := uuid.NewString()
-	reqBytes, err = json.Marshal([]interface{}{"REQ", subscriptionID, messages.Subscription{IDs: []event.ID{testEvent.ID}}})
+	reqBytes, err = json.Marshal([]interface{}{"REQ", subscriptionID, messages.Filter{IDs: []event.ID{testEvent.ID}}})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 
@@ -71,10 +71,10 @@ func TestClosing(t *testing.T) {
 	defer cancel()
 	conn, closer := newSocket(ctx, t)
 	defer closer()
-	subID1 := requestSub(ctx, t, conn, messages.Subscription{})
+	subID1 := requestSub(ctx, t, conn, messages.Filter{})
 	cancelSub(ctx, t, subID1, conn)
 	publish(ctx, t, validEvent, conn)
-	subID2 := requestSub(ctx, t, conn, messages.Subscription{})
+	subID2 := requestSub(ctx, t, conn, messages.Filter{})
 	sub, e, err := readEvent(ctx, t, conn)
 	require.NoError(t, err)
 	require.Equal(t, subID2, sub)
