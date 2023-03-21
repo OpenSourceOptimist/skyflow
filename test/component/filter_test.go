@@ -35,12 +35,12 @@ func TestBasicFiltering(t *testing.T) {
 			expectingMessage: true,
 		},
 		{
-			name:             "eventID filter misses",
+			name:             "authors filter misses",
 			filter:           messages.Filter{Authors: []event.PubKey{"randomPubkey"}},
 			expectingMessage: false,
 		},
 		{
-			name:             "eventID filter matches",
+			name:             "authors filter matches",
 			filter:           messages.Filter{Authors: []event.PubKey{validEvent.PubKey}},
 			expectingMessage: true,
 		},
