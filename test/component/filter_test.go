@@ -45,6 +45,11 @@ func TestBasicFiltering(t *testing.T) {
 			expectingMessage: true,
 		},
 		{
+			name:             "authors prefix",
+			filter:           messages.Filter{Authors: []event.PubKey{validEvent.PubKey[:5]}},
+			expectingMessage: true,
+		},
+		{
 			name:             "kind filter misses",
 			filter:           messages.Filter{Kinds: []event.Kind{24343}},
 			expectingMessage: false,

@@ -88,7 +88,13 @@ func EventFilter(filter Filter) primitive.M {
 		filters = append(filters, M{"$or": idFilters})
 	}
 	if len(filter.Authors) > 0 {
-		filters = append(filters, M{"event.pubkey": primitive.M{"$in": filter.Authors}})
+		authorsFilters := make([]M, 0, len(filter.Authors))
+		for _, pubKey := range filter.Authors {
+			authorsFilters = append(authorsFilters, M{"event.pubkey": M{"$regex": primitive.Regex{
+				Pattern: fmt.Sprintf("^%s.*", pubKey),
+			}}})
+		}
+		filters = append(filters, M{"$or": authorsFilters})
 	}
 	if len(filter.Kinds) > 0 {
 		filters = append(filters, M{"event.kind": primitive.M{"$in": filter.Kinds}})
