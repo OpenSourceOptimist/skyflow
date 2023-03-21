@@ -79,7 +79,13 @@ func SubscriptionFilter(e event.Event) primitive.M {
 func EventFilter(filter Filter) primitive.M {
 	var filters []M
 	if len(filter.IDs) > 0 {
-		filters = append(filters, M{"event.id": primitive.M{"$in": filter.IDs}})
+		idFilters := make([]M, 0, len(filter.IDs))
+		for _, id := range filter.IDs {
+			idFilters = append(idFilters, M{"event.id": M{"$regex": primitive.Regex{
+				Pattern: fmt.Sprintf("^%s.*", id),
+			}}})
+		}
+		filters = append(filters, M{"$or": idFilters})
 	}
 	if len(filter.Authors) > 0 {
 		filters = append(filters, M{"event.pubkey": primitive.M{"$in": filter.Authors}})
