@@ -1,6 +1,4 @@
-FROM registry.fedoraproject.org/fedora-minimal:37 as builder
-
-RUN microdnf install go -y
+FROM docker.io/golang:1.20.2-alpine3.17 as builder
 
 WORKDIR /go/src/github.com/OpenSourceOptimist/skyflow/
 COPY cmd ./cmd
