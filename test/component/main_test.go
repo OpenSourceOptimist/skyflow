@@ -31,7 +31,7 @@ func TestMain(m *testing.M) {
 		&dockertest.RunOptions{
 			Name:       "test_db",
 			Repository: "mongo",
-			Tag:        "5.0.15",
+			Tag:        "6.0.5",
 			PortBindings: map[docker.Port][]docker.PortBinding{
 				"27017/tcp": {{HostPort: "27017"}},
 			},
