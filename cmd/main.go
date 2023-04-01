@@ -24,12 +24,14 @@ import (
 func main() {
 	logrus.SetLevel(logrus.DebugLevel)
 	logrus.SetOutput(os.Stdout)
+	logrus.Info("Starting Skyflow")
 	mongoUri := os.Getenv("MONGODB_URI")
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoUri))
 	if err != nil {
-		panic(err)
+		logrus.Fatal("Mongo connection failed")
 	}
 	defer func() { _ = client.Disconnect(context.Background()) }()
+	logrus.Info("Mongo successfully connected")
 	eventDatabase := &store.Store[event.StructuredEvent]{
 		Col: client.Database("skyflow").Collection("events"),
 	}
