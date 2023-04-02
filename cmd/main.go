@@ -50,7 +50,7 @@ func main() {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		l := &log.Logger{Session: uuid.NewString()[:5]}
 		l.Debug("handling new request")
-		conn, err := websocket.Accept(w, r, nil)
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			l.Error("error setting up websocket", "error", err)
