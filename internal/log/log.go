@@ -53,9 +53,9 @@ func (l *Logger) fields(keyVals []interface{}) logrus.Fields {
 		} else if err, ok := keyVal[1].(error); ok {
 			fields[key] = err.Error()
 		} else if id, ok := keyVal[1].(event.ID); ok {
-			fields[key] = string(id)[:5]
+			fields[key] = slice.Prefix(id, 5)
 		} else if sub, ok := keyVal[1].(messages.SubscriptionID); ok {
-			fields[key] = string(sub)[:5]
+			fields[key] = slice.Prefix(sub, 5)
 		} else {
 			fields[key] = marshall(keyVal[1])
 		}

@@ -165,3 +165,17 @@ func Merge[T any](ctx context.Context, c ...<-chan T) <-chan T {
 		},
 	)
 }
+
+func Prefix[S ~string](s S, elements int) S {
+	if elements <= 0 {
+		return ""
+	}
+	return s[:min(len(s), elements)]
+}
+
+func min(a int, b int) int {
+	if a > b {
+		return b
+	}
+	return a
+}
