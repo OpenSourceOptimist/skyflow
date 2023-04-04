@@ -291,6 +291,7 @@ func TestNIP01MoreComplicatedFiltering(t *testing.T) {
 }
 
 func TestNIP01GetEventsAfterInitialSync(t *testing.T) {
+	defer clearMongo()
 	priv, pub := NewKeyPair(t)
 	conn1 := NewConnection(t)
 	ctx := context.Background()
