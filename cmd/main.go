@@ -78,7 +78,7 @@ func main() {
 					}
 					subscriptionHandler.Cancel()
 					globalOngoingSubscriptions.Delete(subscriptionID)
-					subscriptions.DeleteOne(ctx, subscriptionHandler.Details)
+					_ = subscriptions.DeleteOne(ctx, subscriptionHandler.Details)
 				}
 				return //nolint:govet
 			}
@@ -143,6 +143,9 @@ func main() {
 				go writeFoundEventsToConnection(subscriptionCtx, subscription.ID, subscriptionEvents, conn)
 			case messages.CLOSE:
 				subIDToClose, ok := msg.AsCLOSE()
+				if !ok {
+					continue
+				}
 				l.Debug("recived close over websocket", "subID", subIDToClose)
 				subscriptionHandle, ok := globalOngoingSubscriptions.Load(subIDToClose)
 				if !ok {
@@ -167,7 +170,7 @@ func writeFoundEventsToConnection(
 			if err != nil {
 				continue
 			}
-			connection.Write(ctx, websocket.MessageText, eventMsg)
+			_ = connection.Write(ctx, websocket.MessageText, eventMsg)
 		}
 	}
 }
