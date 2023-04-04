@@ -1,11 +1,10 @@
-package component
+package help
 
 import (
 	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
-	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
@@ -18,14 +17,14 @@ import (
 
 type Closer func()
 
-func newSocket(ctx context.Context, t *testing.T) (*websocket.Conn, Closer) {
+func NewSocket(ctx context.Context, t *testing.T) (*websocket.Conn, Closer) {
 	conn, resp, err := websocket.Dial(ctx, "ws://localhost:80", nil)
 	require.NoError(t, err, "websocket dial error")
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode, "handshake status")
 	return conn, func() { conn.Close(websocket.StatusGoingAway, "bye") }
 }
 
-func toEvent(ne nostr.Event) event.Event {
+func ToEvent(ne nostr.Event) event.Event {
 	return event.Event{
 		ID:        event.ID(ne.ID),
 		PubKey:    event.PubKey(ne.PubKey),
@@ -37,30 +36,13 @@ func toEvent(ne nostr.Event) event.Event {
 	}
 }
 
-func publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.Conn) {
+func Publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.Conn) {
 	reqBytes, err := json.Marshal([]interface{}{"EVENT", e})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 }
 
-func ensureExists(ctx context.Context, t *testing.T, id event.ID, maxWait time.Duration, conn *websocket.Conn) {
-	sub := requestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{id}})
-	timeout := time.After(maxWait)
-	subscription := listenForEventsOnSub(ctx, t, conn, sub)
-	for {
-		select {
-		case e := <-subscription:
-			if e.ID == id {
-				return
-			}
-		case <-timeout:
-			require.Fail(t, "timed out waiting for event: "+string(id))
-			return
-		}
-	}
-}
-
-func requestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filters ...messages.Filter) messages.SubscriptionID {
+func RequestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filters ...messages.Filter) messages.SubscriptionID {
 	subID := uuid.NewString()
 	requestMsg := []interface{}{"REQ", subID}
 	for _, filter := range filters {
@@ -72,13 +54,13 @@ func requestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filters
 	return messages.SubscriptionID(subID)
 }
 
-func listenForEventsOnSub(
+func ListenForEventsOnSub(
 	ctx context.Context, t *testing.T, conn *websocket.Conn, sub messages.SubscriptionID,
 ) <-chan event.Event {
 	events := make(chan event.Event)
 	go func() {
 		for {
-			id, e, err := readEvent(ctx, t, conn)
+			id, e, err := ReadEvent(ctx, t, conn)
 			if err != nil {
 				close(events)
 				return
@@ -95,7 +77,7 @@ func listenForEventsOnSub(
 	}()
 	return events
 }
-func readEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) (messages.SubscriptionID, event.Event, error) {
+func ReadEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) (messages.SubscriptionID, event.Event, error) {
 	msgType, responseBytes, err := conn.Read(ctx)
 	if err != nil {
 		return messages.SubscriptionID(""), event.Event{}, err
@@ -116,7 +98,7 @@ func readEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) (message
 	return subscriptionID, resultEvent, nil
 }
 
-func cancelSub(ctx context.Context, t *testing.T, subID messages.SubscriptionID, conn *websocket.Conn) {
+func CancelSub(ctx context.Context, t *testing.T, subID messages.SubscriptionID, conn *websocket.Conn) {
 	bytes, err := json.Marshal([]interface{}{"CLOSE", subID})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, bytes))

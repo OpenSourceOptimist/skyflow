@@ -10,6 +10,7 @@ import (
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
+	"github.com/OpenSourceOptimist/skyflow/test/help"
 	"github.com/google/uuid"
 	nostr "github.com/nbd-wtf/go-nostr"
 	"github.com/stretchr/testify/require"
@@ -71,20 +72,19 @@ func TestNIP01Closing(t *testing.T) {
 	defer clearMongo()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, closer := newSocket(ctx, t)
+	conn, closer := help.NewSocket(ctx, t)
 	defer closer()
-	subID1 := requestSub(ctx, t, conn, messages.Filter{})
-	cancelSub(ctx, t, subID1, conn)
-	publish(ctx, t, validEvent, conn)
-	subID2 := requestSub(ctx, t, conn, messages.Filter{})
-	sub, e, err := readEvent(ctx, t, conn)
+	subID1 := help.RequestSub(ctx, t, conn, messages.Filter{})
+	help.CancelSub(ctx, t, subID1, conn)
+	help.Publish(ctx, t, validEvent, conn)
+	subID2 := help.RequestSub(ctx, t, conn, messages.Filter{})
+	sub, e, err := help.ReadEvent(ctx, t, conn)
 	require.NoError(t, err)
 	require.Equal(t, subID2, sub)
 	require.Equal(t, validEvent.ID, e.ID)
 }
 
 func TestNIP01BasicFiltering(t *testing.T) {
-
 	testcases := []struct {
 		name             string
 		filter           messages.Filter
@@ -157,12 +157,12 @@ func TestNIP01BasicFiltering(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
 
-			conn, closeFunc := newSocket(ctx, t)
+			conn, closeFunc := help.NewSocket(ctx, t)
 			defer closeFunc()
 
-			publish(ctx, t, validEvent, conn)
+			help.Publish(ctx, t, validEvent, conn)
 
-			requestSub(ctx, t, conn, tc.filter)
+			help.RequestSub(ctx, t, conn, tc.filter)
 
 			ctx, cancel = context.WithTimeout(ctx, time.Second)
 			defer cancel()
@@ -177,14 +177,14 @@ func TestNIP01BasicFiltering(t *testing.T) {
 }
 
 func TestNIP01Filtering(t *testing.T) {
-	createdAt100 := NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(100, 0)})
-	createdAt200 := NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(200, 0)})
-	createdAt300 := NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(300, 0)})
-	createdAt400 := NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(400, 0)})
-	_, pub1 := NewKeyPair(t)
-	_, pub2 := NewKeyPair(t)
-	referencingPub1 := NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub1.String(), ""}}})
-	referencingPub2 := NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub2.String(), ""}}})
+	createdAt100 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(100, 0)})
+	createdAt200 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(200, 0)})
+	createdAt300 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(300, 0)})
+	createdAt400 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(400, 0)})
+	_, pub1 := help.NewKeyPair(t)
+	_, pub2 := help.NewKeyPair(t)
+	referencingPub1 := help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub1.String(), ""}}})
+	referencingPub2 := help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub2.String(), ""}}})
 	testcases := []struct {
 		name            string
 		allEvents       []nostr.Event
@@ -225,14 +225,14 @@ func TestNIP01Filtering(t *testing.T) {
 }
 
 func TestNIP01MoreComplicatedFiltering(t *testing.T) {
-	createdAt100 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(100, 0)}))
-	createdAt200 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(200, 0)}))
-	createdAt300 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(300, 0)}))
-	createdAt400 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(400, 0)}))
-	_, pub1 := NewKeyPair(t)
-	_, pub2 := NewKeyPair(t)
-	referencingPub1 := toEvent(NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub1.String(), ""}}}))
-	referencingPub2 := toEvent(NewSignedEvent(t, EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub2.String(), ""}}}))
+	createdAt100 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(100, 0)}))
+	createdAt200 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(200, 0)}))
+	createdAt300 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(300, 0)}))
+	createdAt400 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(400, 0)}))
+	_, pub1 := help.NewKeyPair(t)
+	_, pub2 := help.NewKeyPair(t)
+	referencingPub1 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub1.String(), ""}}}))
+	referencingPub2 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub2.String(), ""}}}))
 	testcases := []struct {
 		name            string
 		allEvents       []event.Event
@@ -270,14 +270,14 @@ func TestNIP01MoreComplicatedFiltering(t *testing.T) {
 			defer clearMongo()
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			conn, closer := newSocket(ctx, t)
+			conn, closer := help.NewSocket(ctx, t)
 			defer closer()
 			for _, e := range tc.allEvents {
-				publish(ctx, t, e, conn)
+				help.Publish(ctx, t, e, conn)
 			}
-			sub := requestSub(ctx, t, conn, tc.filter...)
+			sub := help.RequestSub(ctx, t, conn, tc.filter...)
 			reciviedEvents := slice.ReadSlice(
-				listenForEventsOnSub(ctx, t, conn, sub),
+				help.ListenForEventsOnSub(ctx, t, conn, sub),
 				500*time.Millisecond,
 			)
 			recivedEventIDs := slice.Map(reciviedEvents, func(e event.Event) event.ID { return e.ID })
@@ -292,23 +292,23 @@ func TestNIP01MoreComplicatedFiltering(t *testing.T) {
 
 func TestNIP01GetEventsAfterInitialSync(t *testing.T) {
 	defer clearMongo()
-	priv, pub := NewKeyPair(t)
-	conn1 := NewConnection(t)
+	priv, pub := help.NewKeyPair(t)
+	conn1 := help.NewConnection(t)
 	ctx := context.Background()
-	initialPublishedEvent := NewSignedEvent(t, EventOptions{PrivKey: priv, Content: "hello world"})
+	initialPublishedEvent := help.NewSignedEvent(t, help.EventOptions{PrivKey: priv, Content: "hello world"})
 	status := conn1.Publish(ctx, initialPublishedEvent)
 	require.Equal(t, nostr.PublishStatusSucceeded, status)
 
-	conn2 := NewConnection(t)
+	conn2 := help.NewConnection(t)
 	subscription := conn2.Subscribe(ctx, nostr.Filters{{Authors: []string{string(pub)}}})
 	select {
 	case initialRecivedEvent := <-subscription.Events:
-		require.Equal(t, toEvent(initialPublishedEvent), toEvent(*initialRecivedEvent))
+		require.Equal(t, help.ToEvent(initialPublishedEvent), help.ToEvent(*initialRecivedEvent))
 	case <-time.After(time.Second):
 		require.Fail(t, "timed out waiting for initial event to be recived")
 	}
 
-	secondPublishedEvent := NewSignedEvent(t, EventOptions{PrivKey: priv, Content: "hello again"})
+	secondPublishedEvent := help.NewSignedEvent(t, help.EventOptions{PrivKey: priv, Content: "hello again"})
 	require.Equal(t,
 		conn1.Publish(ctx, secondPublishedEvent),
 		nostr.PublishStatusSucceeded,
@@ -316,7 +316,7 @@ func TestNIP01GetEventsAfterInitialSync(t *testing.T) {
 
 	select {
 	case secondRecivedEvent := <-subscription.Events:
-		require.Equal(t, toEvent(secondPublishedEvent), toEvent(*secondRecivedEvent))
+		require.Equal(t, help.ToEvent(secondPublishedEvent), help.ToEvent(*secondRecivedEvent))
 	case <-time.After(time.Second):
 		require.Fail(t, "timed out waiting for second event to be recived")
 	}
