@@ -42,16 +42,11 @@ type Filter struct {
 	Limit   int64           `json:"limit" bson:"limit"`
 }
 
-func (e Subscription) UniqueID() string {
-	return string(e.ID)
-}
-func (e Subscription) UniqueIDFieldName(format string) (string, error) {
-	if format == "json" || format == "bson" {
-		return "id", nil
-	} else if format == "struct" {
-		return "ID", nil
-	}
-	return "", fmt.Errorf("only support format json, bson, and struct, not " + format)
+func (e Subscription) UniqueMatch() primitive.M {
+	return primitive.M{"$and": primitive.A{
+		primitive.M{"id": e.ID},
+		primitive.M{"session": e.SessionID},
+	}}
 }
 
 type M primitive.M

@@ -415,3 +415,36 @@ func TestNIP01DuplicateSubscriptionIDsBetweenSessions(t *testing.T) {
 		require.Fail(t, "timed out waiting for event")
 	}
 }
+
+func TestNIP01DuplicateSubscriptionIDsBetweenSessionsClosing(t *testing.T) {
+	defer clearMongo()
+	ctx := context.Background()
+	subID := messages.SubscriptionID(uuid.NewString())
+	bytes, err := json.Marshal([]interface{}{"REQ", subID, messages.Filter{}})
+	require.NoError(t, err)
+
+	conn1, closer1 := help.NewSocket(ctx, t)
+	defer closer1()
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, bytes))
+
+	conn2, closer2 := help.NewSocket(ctx, t)
+	defer closer2()
+	require.NoError(t, conn2.Write(ctx, websocket.MessageText, bytes))
+
+	help.CancelSub(ctx, t, subID, conn2)
+
+	conn3, closer3 := help.NewSocket(ctx, t)
+	defer closer3()
+	content := uuid.NewString()
+	help.Publish(ctx,
+		t,
+		help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Content: content})),
+		conn3)
+
+	select {
+	case e := <-help.ListenForEventsOnSub(ctx, t, conn1, subID):
+		require.Equal(t, content, e.Content)
+	case <-time.After(time.Second):
+		require.Fail(t, "timed out waiting for event")
+	}
+}

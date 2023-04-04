@@ -9,6 +9,7 @@ import (
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/schnorr"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type ID string // <32-bytes lowercase hex-encoded sha256 of the the serialized event data>
@@ -117,16 +118,8 @@ type StructuredEvent struct {
 	P     []PubKey `bson:"#p"`
 }
 
-func (e StructuredEvent) UniqueID() string {
-	return string(e.Event.ID)
-}
-func (e StructuredEvent) UniqueIDFieldName(format string) (string, error) {
-	if format == "json" || format == "bson" {
-		return "event.id", nil
-	} else if format == "struct" {
-		return "Event.ID", nil
-	}
-	return "", fmt.Errorf("only support format json, bson, and struct, not " + format)
+func (e StructuredEvent) UniqueMatch() primitive.M {
+	return primitive.M{"event.id": e.Event.ID}
 }
 
 func NewEventID(pub PubKey, createdAt Timestamp, kind Kind, tags []Tag, content string) (ID, error) {
