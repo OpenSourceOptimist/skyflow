@@ -16,7 +16,7 @@ import (
 	"nhooyr.io/websocket"
 )
 
-func TestBasicNIP01Flow(t *testing.T) {
+func TestNIP01BasicFlow(t *testing.T) {
 	defer clearMongo()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -67,7 +67,7 @@ var validEvent = event.Event{
 	Sig:       event.Signature("f110e4fdf67835fb07abc72469933c40bdc7334615610cade9554bf00945a1cebf84f8d079ec325d26fefd76fe51cb589bdbe208ac9cdbd63351ddad24a57559"),
 }
 
-func TestClosing(t *testing.T) {
+func TestNIP01Closing(t *testing.T) {
 	defer clearMongo()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -83,7 +83,7 @@ func TestClosing(t *testing.T) {
 	require.Equal(t, validEvent.ID, e.ID)
 }
 
-func TestBasicFiltering(t *testing.T) {
+func TestNIP01BasicFiltering(t *testing.T) {
 
 	testcases := []struct {
 		name             string
@@ -176,7 +176,7 @@ func TestBasicFiltering(t *testing.T) {
 	}
 }
 
-func TestFiltering(t *testing.T) {
+func TestNIP01Filtering(t *testing.T) {
 	createdAt100 := NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(100, 0)})
 	createdAt200 := NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(200, 0)})
 	createdAt300 := NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(300, 0)})
@@ -224,7 +224,7 @@ func TestFiltering(t *testing.T) {
 	}
 }
 
-func TestMoreComplicatedFiltering(t *testing.T) {
+func TestNIP01MoreComplicatedFiltering(t *testing.T) {
 	createdAt100 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(100, 0)}))
 	createdAt200 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(200, 0)}))
 	createdAt300 := toEvent(NewSignedEvent(t, EventOptions{CreatedAt: time.Unix(300, 0)}))
@@ -290,7 +290,7 @@ func TestMoreComplicatedFiltering(t *testing.T) {
 	}
 }
 
-func TestGetEventsAfterInitialSync(t *testing.T) {
+func TestNIP01GetEventsAfterInitialSync(t *testing.T) {
 	priv, pub := NewKeyPair(t)
 	conn1 := NewConnection(t)
 	ctx := context.Background()
@@ -321,7 +321,7 @@ func TestGetEventsAfterInitialSync(t *testing.T) {
 	}
 }
 
-func TestVerificationEventID(t *testing.T) {
+func TestNIP01VerificationEventID(t *testing.T) {
 	defer clearMongo()
 	ctx := context.Background()
 	conn, _, _ := websocket.Dial(ctx, "ws://localhost:80", nil)
@@ -350,7 +350,7 @@ func TestVerificationEventID(t *testing.T) {
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-func TestVerificationSignature(t *testing.T) {
+func TestNIP01VerificationSignature(t *testing.T) {
 	defer clearMongo()
 	ctx := context.Background()
 	conn, _, _ := websocket.Dial(ctx, "ws://localhost:80", nil)
