@@ -152,6 +152,7 @@ func main() {
 				if !ok {
 					continue
 				}
+				_ = subscriptions.DeleteOne(ctx, subscriptionHandle.Details)
 				subscriptionHandle.Cancel()
 				globalOngoingSubscriptions.Delete(subscriptionToClose)
 			}
