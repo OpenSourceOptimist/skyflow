@@ -15,10 +15,20 @@ import (
 )
 
 type SubscriptionID string
-
+type SessionID string
+type SubscriptionUUID string
 type Subscription struct {
-	ID      SubscriptionID `json:"id" bson:"id"`
-	Filters []Filter       `bson:"filter"`
+	ID        SubscriptionID `bson:"id"`
+	Filters   []Filter       `bson:"filter"`
+	SessionID SessionID      `bson:"session"`
+}
+
+func (e Subscription) UUID() SubscriptionUUID {
+	return GenerateSubscriptionUUID(e.ID, e.SessionID)
+}
+
+func GenerateSubscriptionUUID(id SubscriptionID, session SessionID) SubscriptionUUID {
+	return SubscriptionUUID(string(id) + string(session))
 }
 
 type Filter struct {
@@ -140,14 +150,22 @@ func (msg WebsocketMessage) AsEvent() (event.Event, bool) {
 	return e, ok
 }
 
-func (msg WebsocketMessage) AsREQ() (Subscription, bool) {
+// SessionID is needed to make the requests globaly unique.
+func (msg WebsocketMessage) AsREQ(session SessionID) (Subscription, bool) {
 	sub, ok := msg.Value.(Subscription)
-	return sub, ok
+	if !ok {
+		return Subscription{}, false
+	}
+	sub.SessionID = session
+	return sub, true
 }
 
-func (msg WebsocketMessage) AsCLOSE() (SubscriptionID, bool) {
+func (msg WebsocketMessage) AsCLOSE(session SessionID) (SubscriptionUUID, bool) {
 	sub, ok := msg.Value.(SubscriptionID)
-	return sub, ok
+	if !ok {
+		return "", false
+	}
+	return GenerateSubscriptionUUID(sub, session), true
 }
 
 func ListenForMessages(ctx context.Context, r MessageReader) <-chan WebsocketMessage {

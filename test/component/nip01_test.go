@@ -378,3 +378,40 @@ func TestNIP01VerificationSignature(t *testing.T) {
 	require.Equal(t, "", string(readBytes))
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
+
+func TestNIP01DuplicateSubscriptionIDsBetweenSessions(t *testing.T) {
+	defer clearMongo()
+	ctx := context.Background()
+	subID := uuid.NewString()
+	bytes, err := json.Marshal([]interface{}{"REQ", subID, messages.Filter{}})
+	require.NoError(t, err)
+
+	conn1, closer1 := help.NewSocket(ctx, t)
+	defer closer1()
+	require.NoError(t, conn1.Write(ctx, websocket.MessageText, bytes))
+
+	conn2, closer2 := help.NewSocket(ctx, t)
+	defer closer2()
+	require.NoError(t, conn2.Write(ctx, websocket.MessageText, bytes))
+
+	conn3, closer3 := help.NewSocket(ctx, t)
+	defer closer3()
+	content := uuid.NewString()
+	help.Publish(ctx,
+		t,
+		help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Content: content})),
+		conn3)
+
+	select {
+	case e := <-help.ListenForEventsOnSub(ctx, t, conn1, messages.SubscriptionID(subID)):
+		require.Equal(t, content, e.Content)
+	case <-time.After(time.Second):
+		require.Fail(t, "timed out waiting for event")
+	}
+	select {
+	case e := <-help.ListenForEventsOnSub(ctx, t, conn2, messages.SubscriptionID(subID)):
+		require.Equal(t, content, e.Content)
+	case <-time.After(time.Second):
+		require.Fail(t, "timed out waiting for event")
+	}
+}

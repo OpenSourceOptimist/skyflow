@@ -45,10 +45,11 @@ func main() {
 		time.Sleep(time.Second)
 	}
 
-	globalOngoingSubscriptions := NewSyncMap[messages.SubscriptionID, SubscriptionHandle]()
+	globalOngoingSubscriptions := NewSyncMap[messages.SubscriptionUUID, SubscriptionHandle]()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		l := &log.Logger{Session: uuid.NewString()[:5]}
+		session := messages.SessionID(uuid.NewString())
+		l := &log.Logger{Session: slice.Prefix(string(session), 5)}
 		l.Debug("handling new request")
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 		if err != nil {
@@ -61,7 +62,7 @@ func main() {
 			conn.Close(websocket.StatusInternalError, "thanks, bye")
 		}()
 		ctx := r.Context()
-		subscriptionsAssosiatedWithRequest := make([]messages.SubscriptionID, 0)
+		subscriptionsAssosiatedWithRequest := make([]messages.SubscriptionUUID, 0)
 		websocketMessages := messages.ListenForMessages(ctx, conn)
 		for {
 			l.IncrementSession()
@@ -96,7 +97,7 @@ func main() {
 				l.Debug("event over websocket", "eID", e.ID)
 				_ = eventDatabase.InsertOne(ctx, event.Structure(e))
 				for subscription := range subscriptions.Find(ctx, messages.SubscriptionFilter(e)) {
-					handle, ok := globalOngoingSubscriptions.Load(subscription.ID)
+					handle, ok := globalOngoingSubscriptions.Load(subscription.UUID())
 					if !ok {
 						l.Error("subscription not in global map", "subID", subscription.ID)
 						continue
@@ -105,20 +106,20 @@ func main() {
 					slice.AsyncWrite(handle.Ctx, handle.NewEvents, e)
 				}
 			case messages.REQ:
-				subscription, ok := msg.AsREQ()
+				subscription, ok := msg.AsREQ(session)
 				if !ok {
 					l.Error("not REQ", "msg", msg)
 				}
 				l.Debug("subscription over websocket", "subscription", subscription)
 				subscriptionCtx, cancelSubscription := context.WithCancel(ctx) //nolint:govet
 				defer cancelSubscription()
-				if _, ok := globalOngoingSubscriptions.Load(subscription.ID); ok {
+				if _, ok := globalOngoingSubscriptions.Load(subscription.UUID()); ok {
 					continue
 				}
 				_ = subscriptions.InsertOne(ctx, subscription)
 				newEvents := make(chan event.Event)
 				globalOngoingSubscriptions.Store(
-					subscription.ID,
+					subscription.UUID(),
 					SubscriptionHandle{
 						Ctx:       subscriptionCtx,
 						Cancel:    cancelSubscription,
@@ -142,17 +143,17 @@ func main() {
 				subscriptionEvents := slice.ChanConcatenate(events, newEvents)
 				go writeFoundEventsToConnection(subscriptionCtx, subscription.ID, subscriptionEvents, conn)
 			case messages.CLOSE:
-				subIDToClose, ok := msg.AsCLOSE()
+				subscriptionToClose, ok := msg.AsCLOSE(session)
 				if !ok {
 					continue
 				}
-				l.Debug("recived close over websocket", "subID", subIDToClose)
-				subscriptionHandle, ok := globalOngoingSubscriptions.Load(subIDToClose)
+				l.Debug("recived close over websocket", "subID", subscriptionToClose)
+				subscriptionHandle, ok := globalOngoingSubscriptions.Load(subscriptionToClose)
 				if !ok {
 					continue
 				}
 				subscriptionHandle.Cancel()
-				globalOngoingSubscriptions.Delete(subIDToClose)
+				globalOngoingSubscriptions.Delete(subscriptionToClose)
 			}
 		}
 	})
