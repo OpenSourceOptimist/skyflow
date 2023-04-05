@@ -84,155 +84,26 @@ func TestNIP01Closing(t *testing.T) {
 	require.Equal(t, validEvent.ID, e.ID)
 }
 
-func TestNIP01BasicFiltering(t *testing.T) {
-	testcases := []struct {
-		name             string
-		filter           messages.Filter
-		expectingMessage bool
-	}{
-		{
-			name:             "eventID filter misses",
-			filter:           messages.Filter{IDs: []event.ID{"randomEventID"}},
-			expectingMessage: false,
-		},
-		{
-			name:             "eventID filter matches",
-			filter:           messages.Filter{IDs: []event.ID{validEvent.ID}},
-			expectingMessage: true,
-		},
-		{
-			name:             "eventID prefix",
-			filter:           messages.Filter{IDs: []event.ID{validEvent.ID[:5]}},
-			expectingMessage: true,
-		},
-		{
-			name:             "authors filter misses",
-			filter:           messages.Filter{Authors: []event.PubKey{"randomPubkey"}},
-			expectingMessage: false,
-		},
-		{
-			name:             "authors filter matches",
-			filter:           messages.Filter{Authors: []event.PubKey{validEvent.PubKey}},
-			expectingMessage: true,
-		},
-		{
-			name:             "authors prefix",
-			filter:           messages.Filter{Authors: []event.PubKey{validEvent.PubKey[:5]}},
-			expectingMessage: true,
-		},
-		{
-			name:             "kind filter misses",
-			filter:           messages.Filter{Kinds: []event.Kind{24343}},
-			expectingMessage: false,
-		},
-		{
-			name:             "kind filter matches",
-			filter:           messages.Filter{Kinds: []event.Kind{validEvent.Kind}},
-			expectingMessage: true,
-		},
-		{
-			name:             "since filter matches",
-			filter:           messages.Filter{Since: validEvent.CreatedAt - 1},
-			expectingMessage: true,
-		},
-		{
-			name:             "since filter does not matche",
-			filter:           messages.Filter{Since: validEvent.CreatedAt + 1},
-			expectingMessage: false,
-		},
-		{
-			name:             "until filter matches",
-			filter:           messages.Filter{Until: validEvent.CreatedAt + 1},
-			expectingMessage: true,
-		},
-		{
-			name:             "until filter does not matche",
-			filter:           messages.Filter{Until: validEvent.CreatedAt - 1},
-			expectingMessage: false,
-		},
-	}
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			defer clearMongo()
-			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-			defer cancel()
-
-			conn, closeFunc := help.NewSocket(ctx, t)
-			defer closeFunc()
-
-			help.Publish(ctx, t, validEvent, conn)
-
-			help.RequestSub(ctx, t, conn, tc.filter)
-
-			ctx, cancel = context.WithTimeout(ctx, time.Second)
-			defer cancel()
-			_, _, err := conn.Read(ctx)
-			if tc.expectingMessage {
-				require.NoError(t, err)
-			} else {
-				require.ErrorIs(t, err, context.DeadlineExceeded)
-			}
-		})
-	}
-}
-
-func TestNIP01Filtering(t *testing.T) {
-	createdAt100 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(100, 0)})
-	createdAt200 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(200, 0)})
-	createdAt300 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(300, 0)})
-	createdAt400 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(400, 0)})
-	_, pub1 := help.NewKeyPair(t)
-	_, pub2 := help.NewKeyPair(t)
-	referencingPub1 := help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub1.String(), ""}}})
-	referencingPub2 := help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub2.String(), ""}}})
-	testcases := []struct {
-		name            string
-		allEvents       []nostr.Event
-		filter          nostr.Filter
-		recivedEventIDs []string
-	}{
-		{
-			name:            "Enfoce limit, latest 3",
-			allEvents:       []nostr.Event{createdAt100, createdAt200, createdAt300, createdAt400},
-			filter:          nostr.Filter{Limit: 3},
-			recivedEventIDs: []string{createdAt400.ID, createdAt300.ID, createdAt200.ID},
-		},
-		{
-			name:            "Filter on pubkeys referenced in p tag with go-nostr library",
-			allEvents:       []nostr.Event{referencingPub1, referencingPub2, createdAt100},
-			filter:          nostr.Filter{Tags: nostr.TagMap{"p": []string{pub1.String()}}},
-			recivedEventIDs: []string{referencingPub1.ID},
-		},
-	}
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			defer clearMongo()
-			ctx := context.Background()
-			relay, err := nostr.RelayConnect(ctx, "ws://localhost:80")
-			require.NoError(t, err, "relay connecting")
-			defer relay.Close()
-			for _, e := range tc.allEvents {
-				require.Equal(t, "success", relay.Publish(ctx, e).String())
-			}
-			sub := relay.Subscribe(ctx, nostr.Filters{tc.filter})
-			reciviedEvents := slice.ReadSlice(sub.Events, 500*time.Millisecond)
-			require.NoError(t, err, "retriving events")
-			recivedEventIDs := slice.Map(reciviedEvents, func(e *nostr.Event) string { return e.ID })
-			require.Equal(t, tc.recivedEventIDs, recivedEventIDs)
-
-		})
-	}
-}
-
-func TestNIP01MoreComplicatedFiltering(t *testing.T) {
+func TestNIP01Filters(t *testing.T) {
 	createdAt100 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(100, 0)}))
 	createdAt200 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(200, 0)}))
 	createdAt300 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(300, 0)}))
 	createdAt400 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(400, 0)}))
-	_, pub1 := help.NewKeyPair(t)
-	_, pub2 := help.NewKeyPair(t)
+	priv1, pub1 := help.NewKeyPair(t)
+	priv2, pub2 := help.NewKeyPair(t)
+	priv3, _ := help.NewKeyPair(t)
 	referencingPub1 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub1.String(), ""}}}))
 	referencingPub2 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub2.String(), ""}}}))
+	fromPub1 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{PrivKey: priv1}))
+	fromPub2 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{PrivKey: priv2}))
+	fromPub3 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{PrivKey: priv3}))
+	kind1 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Kind: 1}))
+	kind2 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Kind: 2}))
+	kind3 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Kind: 3}))
+	oldest := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(0, 0)}))
+	newer := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(1000, 0)}))
+	newest := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(10000, 0)}))
+
 	testcases := []struct {
 		name            string
 		allEvents       []event.Event
@@ -264,6 +135,54 @@ func TestNIP01MoreComplicatedFiltering(t *testing.T) {
 			recivedEventIDs: []event.ID{createdAt100.ID, referencingPub1.ID},
 			requireOrder:    false,
 		},
+		{
+			name:            "eventID",
+			allEvents:       []event.Event{createdAt200, createdAt100, createdAt300},
+			filter:          []messages.Filter{{IDs: []event.ID{createdAt100.ID}}},
+			recivedEventIDs: []event.ID{createdAt100.ID},
+		},
+		{
+			name:            "eventID prefix",
+			allEvents:       []event.Event{createdAt200, createdAt100, createdAt300},
+			filter:          []messages.Filter{{IDs: []event.ID{createdAt100.ID[:5]}}},
+			recivedEventIDs: []event.ID{createdAt100.ID},
+		},
+		{
+			name:            "authors",
+			allEvents:       []event.Event{fromPub1, fromPub2, fromPub3},
+			filter:          []messages.Filter{{Authors: []event.PubKey{fromPub2.PubKey}}},
+			recivedEventIDs: []event.ID{fromPub2.ID},
+		},
+		{
+			name:            "authors prefix",
+			allEvents:       []event.Event{fromPub1, fromPub2, fromPub3},
+			filter:          []messages.Filter{{Authors: []event.PubKey{fromPub2.PubKey[:5]}}},
+			recivedEventIDs: []event.ID{fromPub2.ID},
+		},
+		{
+			name:            "kind",
+			allEvents:       []event.Event{kind1, kind2, kind3},
+			filter:          []messages.Filter{{Kinds: []event.Kind{kind2.Kind}}},
+			recivedEventIDs: []event.ID{kind2.ID},
+		},
+		{
+			name:            "since",
+			allEvents:       []event.Event{oldest, newer, newest},
+			filter:          []messages.Filter{{Since: newer.CreatedAt}},
+			recivedEventIDs: []event.ID{newest.ID},
+		},
+		{
+			name:            "until",
+			allEvents:       []event.Event{oldest, newer, newest},
+			filter:          []messages.Filter{{Until: newer.CreatedAt}},
+			recivedEventIDs: []event.ID{oldest.ID},
+		},
+		{
+			name:            "since-until",
+			allEvents:       []event.Event{oldest, newer, newest},
+			filter:          []messages.Filter{{Since: oldest.CreatedAt, Until: newest.CreatedAt}},
+			recivedEventIDs: []event.ID{newer.ID},
+		},
 	}
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -278,7 +197,8 @@ func TestNIP01MoreComplicatedFiltering(t *testing.T) {
 			sub := help.RequestSub(ctx, t, conn, tc.filter...)
 			reciviedEvents := slice.ReadSlice(
 				help.ListenForEventsOnSub(ctx, t, conn, sub),
-				500*time.Millisecond,
+				len(tc.recivedEventIDs),
+				time.Second,
 			)
 			recivedEventIDs := slice.Map(reciviedEvents, func(e event.Event) event.ID { return e.ID })
 			if tc.requireOrder {
@@ -325,58 +245,35 @@ func TestNIP01GetEventsAfterInitialSync(t *testing.T) {
 func TestNIP01VerificationEventID(t *testing.T) {
 	defer clearMongo()
 	ctx := context.Background()
-	conn, _, _ := websocket.Dial(ctx, "ws://localhost:80", nil)
-	defer conn.Close(websocket.StatusGoingAway, "bye")
-	testEvent := event.Event{
-		ID:        event.ID("d8dd5eb23b747e16f8d0212d53032ea2a7cadef53837e5a6c66142843fcb9027"), // modified in a couple of places
-		Kind:      event.Kind(1),
-		PubKey:    event.PubKey("22a12a128a3be27cd7fb250cbe796e692896398dc1440ae3fa567812c8107c1c"),
-		CreatedAt: event.Timestamp(1670869179),
-		Content:   "NOSTR \"WINE-ACCOUNT\" WITH HARVEST DATE STAMPED\n\n\n\"The older the wine, the greater its reputation\"\n\n\n22a12a128a3be27cd7fb250cbe796e692896398dc1440ae3fa567812c8107c1c\n\n\nNWA 2022-12-12\nAA",
-		Tags:      []event.Tag{{"client", "astral"}},
-		Sig:       event.Signature("f110e4fdf67835fb07abc72469933c40bdc7334615610cade9554bf00945a1cebf84f8d079ec325d26fefd76fe51cb589bdbe208ac9cdbd63351ddad24a57559"),
-	}
+	conn, closer := help.NewSocket(ctx, t)
+	defer closer()
 
-	// Writing a bad event should work
-	eventMsg, _ := json.Marshal([]any{"EVENT", testEvent})
+	badEvent := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(1000, 0)}))
+	badEvent.ID = "really wrong event id"
+	help.Publish(ctx, t, badEvent, conn)
+	olderevent := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(0, 0)}))
+	help.Publish(ctx, t, olderevent, conn)
 
-	require.NoError(t, conn.Write(ctx, websocket.MessageText, eventMsg))
-	// But should not show up in a request
-	reqBytes, _ := json.Marshal([]interface{}{"REQ", uuid.NewString(), messages.Filter{IDs: []event.ID{testEvent.ID}}})
-	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
-	ctx, cancelFunc := context.WithTimeout(ctx, time.Second)
-	defer cancelFunc()
-	_, readBytes, err := conn.Read(ctx)
-	require.Equal(t, "", string(readBytes))
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	subID := help.RequestSub(ctx, t, conn)
+	found := slice.ReadSlice(help.ListenForEventsOnSub(ctx, t, conn, subID), 1, time.Second)
+	require.Equal(t, []event.ID{olderevent.ID}, slice.Map(found, func(e event.Event) event.ID { return e.ID }))
 }
 
 func TestNIP01VerificationSignature(t *testing.T) {
 	defer clearMongo()
 	ctx := context.Background()
-	conn, _, _ := websocket.Dial(ctx, "ws://localhost:80", nil)
-	defer conn.Close(websocket.StatusGoingAway, "bye")
-	testEvent := event.Event{
-		ID:        event.ID("d7dd5eb3ab747e16f8d0212d53032ea2a7cadef53837e5a6c66d42849fcb9027"),
-		Kind:      event.Kind(1),
-		PubKey:    event.PubKey("22a12a128a3be27cd7fb250cbe796e692896398dc1440ae3fa567812c8107c1c"),
-		CreatedAt: event.Timestamp(1670869179),
-		Content:   "NOSTR \"WINE-ACCOUNT\" WITH HARVEST DATE STAMPED\n\n\n\"The older the wine, the greater its reputation\"\n\n\n22a12a128a3be27cd7fb250cbe796e692896398dc1440ae3fa567812c8107c1c\n\n\nNWA 2022-12-12\nAA",
-		Tags:      []event.Tag{{"client", "astral"}},
-		Sig:       event.Signature("f111e4fdf67835fb07abc72469933c40bdc7334615610cade9554bf00945a1cebf84f8d079ec325d26fefd76fe51cb589bdbe208ac9cdbd63351ddad24a57559"), // modified
-	}
+	conn, closer := help.NewSocket(ctx, t)
+	defer closer()
 
-	// Writing a bad event should work
-	eventMsg, _ := json.Marshal([]any{"EVENT", testEvent})
-	require.NoError(t, conn.Write(ctx, websocket.MessageText, eventMsg))
-	// But should not show up in a request
-	reqBytes, _ := json.Marshal([]interface{}{"REQ", uuid.NewString(), messages.Filter{IDs: []event.ID{testEvent.ID}}})
-	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
-	ctx, cancelFunc := context.WithTimeout(ctx, time.Second)
-	defer cancelFunc()
-	_, readBytes, err := conn.Read(ctx)
-	require.Equal(t, "", string(readBytes))
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	badEvent := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(1000, 0)}))
+	badEvent.Sig = "really wrong signature"
+	help.Publish(ctx, t, badEvent, conn)
+	olderevent := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(0, 0)}))
+	help.Publish(ctx, t, olderevent, conn)
+
+	subID := help.RequestSub(ctx, t, conn)
+	found := slice.ReadSlice(help.ListenForEventsOnSub(ctx, t, conn, subID), 1, time.Second)
+	require.Equal(t, []event.ID{olderevent.ID}, slice.Map(found, func(e event.Event) event.ID { return e.ID }))
 }
 
 func TestNIP01DuplicateSubscriptionIDsBetweenSessions(t *testing.T) {

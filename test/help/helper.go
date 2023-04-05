@@ -43,6 +43,9 @@ func Publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.C
 }
 
 func RequestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filters ...messages.Filter) messages.SubscriptionID {
+	if len(filters) == 0 {
+		filters = []messages.Filter{{}}
+	}
 	subID := uuid.NewString()
 	requestMsg := []interface{}{"REQ", subID}
 	for _, filter := range filters {

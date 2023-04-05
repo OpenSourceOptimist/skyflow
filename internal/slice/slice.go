@@ -22,9 +22,9 @@ func Contains[T comparable](slice []T, element T) bool {
 	return false
 }
 
-func ReadSlice[T any](c <-chan T, timeout time.Duration) []T {
+func ReadSlice[T any](c <-chan T, items int, timeout time.Duration) []T {
 	res := make([]T, 0)
-	for {
+	for len(res) < items {
 		select {
 		case t := <-c:
 			res = append(res, t)
@@ -32,6 +32,7 @@ func ReadSlice[T any](c <-chan T, timeout time.Duration) []T {
 			return res
 		}
 	}
+	return res
 }
 
 func FindAll[T any, K any](slice []T, f func(T) (K, bool)) []K {
