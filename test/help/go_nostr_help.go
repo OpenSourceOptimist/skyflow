@@ -29,7 +29,7 @@ type EventOptions struct {
 	Content   string
 }
 
-func NewSignedEvent(t *testing.T, opts EventOptions) nostr.Event {
+func NewSignedEvent(t require.TestingT, opts EventOptions) nostr.Event {
 	privKey := opts.PrivKey
 	if privKey == "" {
 		privKey = PrivKey(nostr.GeneratePrivateKey())

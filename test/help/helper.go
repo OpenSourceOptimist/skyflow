@@ -17,8 +17,22 @@ import (
 
 type Closer func()
 
-func NewSocket(ctx context.Context, t *testing.T) (*websocket.Conn, Closer) {
-	conn, resp, err := websocket.Dial(ctx, "ws://localhost:80", nil)
+func WithURI(uri string) SocketOpts {
+	return SocketOpts{URI: uri}
+}
+
+type SocketOpts struct {
+	URI string
+}
+
+func NewSocket(ctx context.Context, t require.TestingT, opts ...SocketOpts) (*websocket.Conn, Closer) {
+	uri := "ws://localhost:80"
+	for _, opt := range opts {
+		if opt.URI != "" {
+			uri = opt.URI
+		}
+	}
+	conn, resp, err := websocket.Dial(ctx, uri, nil)
 	require.NoError(t, err, "websocket dial error")
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode, "handshake status")
 	return conn, func() { conn.Close(websocket.StatusGoingAway, "bye") }
@@ -36,7 +50,7 @@ func ToEvent(ne nostr.Event) event.Event {
 	}
 }
 
-func Publish(ctx context.Context, t *testing.T, e event.Event, conn *websocket.Conn) {
+func Publish(ctx context.Context, t require.TestingT, e event.Event, conn *websocket.Conn) {
 	reqBytes, err := json.Marshal([]interface{}{"EVENT", e})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))

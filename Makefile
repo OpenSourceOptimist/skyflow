@@ -11,3 +11,7 @@ test-unit:
 
 lint:
 	golangci-lint run
+
+benchmark:
+	go build -o skyflow_bench test/benchmark/main.go
+	./skyflow_bench
