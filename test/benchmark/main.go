@@ -13,13 +13,14 @@ func main() {
 	ctx := context.Background()
 	conn, closer := help.NewSocket(ctx, t, help.WithURI("wss://relay.nostry.eu"))
 	defer closer()
+	count := 200
 	before := time.Now()
-	for i := 0; i < 100; i++ {
+	for i := 0; i < count; i++ {
 		help.Publish(ctx, t,
-			help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Content: fmt.Sprintf("%d", i)})),
+			help.NewSignedEvent(t, help.EventOptions{Content: fmt.Sprintf("%d", i)}),
 			conn)
 	}
-	fmt.Println(fmt.Sprintf("average publish: %f ms", float64(time.Since(before).Milliseconds())/float64(count)))
+	fmt.Printf("average publish: %f ms\n", float64(time.Since(before).Milliseconds())/float64(count))
 }
 
 type PanicTestingT struct{}

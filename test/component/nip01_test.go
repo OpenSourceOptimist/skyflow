@@ -85,24 +85,24 @@ func TestNIP01Closing(t *testing.T) {
 }
 
 func TestNIP01Filters(t *testing.T) {
-	createdAt100 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(100, 0)}))
-	createdAt200 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(200, 0)}))
-	createdAt300 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(300, 0)}))
-	createdAt400 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(400, 0)}))
+	createdAt100 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(100, 0)})
+	createdAt200 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(200, 0)})
+	createdAt300 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(300, 0)})
+	createdAt400 := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(400, 0)})
 	priv1, pub1 := help.NewKeyPair(t)
 	priv2, pub2 := help.NewKeyPair(t)
 	priv3, _ := help.NewKeyPair(t)
-	referencingPub1 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub1.String(), ""}}}))
-	referencingPub2 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", pub2.String(), ""}}}))
-	fromPub1 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{PrivKey: priv1}))
-	fromPub2 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{PrivKey: priv2}))
-	fromPub3 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{PrivKey: priv3}))
-	kind1 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Kind: 1}))
-	kind2 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Kind: 2}))
-	kind3 := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Kind: 3}))
-	oldest := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(0, 0)}))
-	newer := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(1000, 0)}))
-	newest := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(10000, 0)}))
+	referencingPub1 := help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", string(pub1), ""}}})
+	referencingPub2 := help.NewSignedEvent(t, help.EventOptions{Tags: nostr.Tags{nostr.Tag{"p", string(pub2), ""}}})
+	fromPub1 := help.NewSignedEvent(t, help.EventOptions{PrivKey: priv1})
+	fromPub2 := help.NewSignedEvent(t, help.EventOptions{PrivKey: priv2})
+	fromPub3 := help.NewSignedEvent(t, help.EventOptions{PrivKey: priv3})
+	kind1 := help.NewSignedEvent(t, help.EventOptions{Kind: 1})
+	kind2 := help.NewSignedEvent(t, help.EventOptions{Kind: 2})
+	kind3 := help.NewSignedEvent(t, help.EventOptions{Kind: 3})
+	oldest := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(0, 0)})
+	newer := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(1000, 0)})
+	newest := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(10000, 0)})
 
 	testcases := []struct {
 		name            string
@@ -213,30 +213,29 @@ func TestNIP01Filters(t *testing.T) {
 func TestNIP01GetEventsAfterInitialSync(t *testing.T) {
 	defer clearMongo()
 	priv, pub := help.NewKeyPair(t)
-	conn1 := help.NewConnection(t)
 	ctx := context.Background()
+	conn1, closer1 := help.NewSocket(ctx, t)
+	defer closer1()
 	initialPublishedEvent := help.NewSignedEvent(t, help.EventOptions{PrivKey: priv, Content: "hello world"})
-	status := conn1.Publish(ctx, initialPublishedEvent)
-	require.Equal(t, nostr.PublishStatusSucceeded, status)
+	help.Publish(ctx, t, initialPublishedEvent, conn1)
 
-	conn2 := help.NewConnection(t)
-	subscription := conn2.Subscribe(ctx, nostr.Filters{{Authors: []string{string(pub)}}})
+	conn2, closer2 := help.NewSocket(ctx, t)
+	defer closer2()
+	subID := help.RequestSub(ctx, t, conn2, messages.Filter{Authors: []event.PubKey{pub}})
+	subEvents := help.ListenForEventsOnSub(ctx, t, conn2, subID)
 	select {
-	case initialRecivedEvent := <-subscription.Events:
-		require.Equal(t, help.ToEvent(initialPublishedEvent), help.ToEvent(*initialRecivedEvent))
+	case initialRecivedEvent := <-subEvents:
+		require.Equal(t, initialPublishedEvent, initialRecivedEvent)
 	case <-time.After(time.Second):
 		require.Fail(t, "timed out waiting for initial event to be recived")
 	}
 
 	secondPublishedEvent := help.NewSignedEvent(t, help.EventOptions{PrivKey: priv, Content: "hello again"})
-	require.Equal(t,
-		conn1.Publish(ctx, secondPublishedEvent),
-		nostr.PublishStatusSucceeded,
-	)
+	help.Publish(ctx, t, secondPublishedEvent, conn1)
 
 	select {
-	case secondRecivedEvent := <-subscription.Events:
-		require.Equal(t, help.ToEvent(secondPublishedEvent), help.ToEvent(*secondRecivedEvent))
+	case secondRecivedEvent := <-subEvents:
+		require.Equal(t, secondPublishedEvent, secondRecivedEvent)
 	case <-time.After(time.Second):
 		require.Fail(t, "timed out waiting for second event to be recived")
 	}
@@ -248,10 +247,10 @@ func TestNIP01VerificationEventID(t *testing.T) {
 	conn, closer := help.NewSocket(ctx, t)
 	defer closer()
 
-	badEvent := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(1000, 0)}))
+	badEvent := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(1000, 0)})
 	badEvent.ID = "really wrong event id"
 	help.Publish(ctx, t, badEvent, conn)
-	olderevent := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(0, 0)}))
+	olderevent := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(0, 0)})
 	help.Publish(ctx, t, olderevent, conn)
 
 	subID := help.RequestSub(ctx, t, conn)
@@ -265,10 +264,10 @@ func TestNIP01VerificationSignature(t *testing.T) {
 	conn, closer := help.NewSocket(ctx, t)
 	defer closer()
 
-	badEvent := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(1000, 0)}))
+	badEvent := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(1000, 0)})
 	badEvent.Sig = "really wrong signature"
 	help.Publish(ctx, t, badEvent, conn)
-	olderevent := help.ToEvent(help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(0, 0)}))
+	olderevent := help.NewSignedEvent(t, help.EventOptions{CreatedAt: time.Unix(0, 0)})
 	help.Publish(ctx, t, olderevent, conn)
 
 	subID := help.RequestSub(ctx, t, conn)
@@ -296,7 +295,7 @@ func TestNIP01DuplicateSubscriptionIDsBetweenSessions(t *testing.T) {
 	content := uuid.NewString()
 	help.Publish(ctx,
 		t,
-		help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Content: content})),
+		help.NewSignedEvent(t, help.EventOptions{Content: content}),
 		conn3)
 
 	select {
@@ -335,7 +334,7 @@ func TestNIP01DuplicateSubscriptionIDsBetweenSessionsClosing(t *testing.T) {
 	content := uuid.NewString()
 	help.Publish(ctx,
 		t,
-		help.ToEvent(help.NewSignedEvent(t, help.EventOptions{Content: content})),
+		help.NewSignedEvent(t, help.EventOptions{Content: content}),
 		conn3)
 
 	select {

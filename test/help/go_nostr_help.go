@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	nostr "github.com/nbd-wtf/go-nostr"
 	"github.com/stretchr/testify/require"
 )
@@ -29,7 +30,7 @@ type EventOptions struct {
 	Content   string
 }
 
-func NewSignedEvent(t require.TestingT, opts EventOptions) nostr.Event {
+func NewSignedEvent(t require.TestingT, opts EventOptions) event.Event {
 	privKey := opts.PrivKey
 	if privKey == "" {
 		privKey = PrivKey(nostr.GeneratePrivateKey())
@@ -44,14 +45,14 @@ func NewSignedEvent(t require.TestingT, opts EventOptions) nostr.Event {
 		Content:   opts.Content,
 	}
 	require.NoError(t, e.Sign(privKey.String()), "signing test event")
-	return *e
+	return ToEvent(*e)
 }
 
-func NewKeyPair(t *testing.T) (PrivKey, PubKey) {
+func NewKeyPair(t *testing.T) (PrivKey, event.PubKey) {
 	priv := nostr.GeneratePrivateKey()
 	pub, err := nostr.GetPublicKey(priv)
 	require.NoError(t, err)
-	return PrivKey(priv), PubKey(pub)
+	return PrivKey(priv), event.PubKey(pub)
 }
 
 func NewConnection(t *testing.T) *nostr.Relay {
