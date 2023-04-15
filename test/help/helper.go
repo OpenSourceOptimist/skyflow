@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
@@ -38,7 +39,7 @@ func NewSocket(ctx context.Context, t require.TestingT, opts ...SocketOpts) (*we
 	return conn, func() { conn.Close(websocket.StatusGoingAway, "bye") }
 }
 
-func ToEvent(ne nostr.Event) event.Event {
+func toEvent(ne nostr.Event) event.Event {
 	return event.Event{
 		ID:        event.ID(ne.ID),
 		PubKey:    event.PubKey(ne.PubKey),
@@ -69,6 +70,16 @@ func RequestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filters
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, bytes))
 	return messages.SubscriptionID(subID)
+}
+
+func GetEvent(ctx context.Context, t *testing.T, conn *websocket.Conn, id event.ID, timeout time.Duration) (event.Event, bool) {
+	subID := RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{id}})
+	select {
+	case e := <-ListenForEventsOnSub(ctx, t, conn, subID):
+		return e, true
+	case <-time.After(timeout):
+		return event.Event{}, false
+	}
 }
 
 func ListenForEventsOnSub(
