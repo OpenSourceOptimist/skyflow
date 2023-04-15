@@ -17,7 +17,7 @@ func main() {
 	before := time.Now()
 	for i := 0; i < count; i++ {
 		help.Publish(ctx, t,
-			help.NewSignedEvent(t, help.EventOptions{Content: fmt.Sprintf("%d", i)}),
+			help.Event(t, help.EventOptions{Content: fmt.Sprintf("%d", i)}),
 			conn)
 	}
 	fmt.Printf("average publish: %f ms\n", float64(time.Since(before).Milliseconds())/float64(count))
