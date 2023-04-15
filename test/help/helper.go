@@ -26,8 +26,14 @@ type SocketOpts struct {
 	URI string
 }
 
+var defaultURI string = "ws://localhost:80"
+
+func SetDefaultURI(uri string) {
+	defaultURI = uri
+}
+
 func NewSocket(ctx context.Context, t require.TestingT, opts ...SocketOpts) (*websocket.Conn, Closer) {
-	uri := "ws://localhost:80"
+	uri := defaultURI
 	for _, opt := range opts {
 		if opt.URI != "" {
 			uri = opt.URI

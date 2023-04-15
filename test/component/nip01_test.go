@@ -3,7 +3,6 @@ package component
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"testing"
 	"time"
 
@@ -17,22 +16,19 @@ import (
 )
 
 func TestNIP01BasicFlow(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	conn, resp, err := websocket.Dial(ctx, "ws://localhost:80", nil)
-	require.NoError(t, err, "websocket dial error")
-	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode, "handshake status")
-	defer conn.Close(websocket.StatusGoingAway, "bye")
+	conn, closer := help.NewSocket(ctx, t)
+	defer closer()
 
 	testEvent := help.Event(t, help.EventOptions{})
-
-	reqBytes, err := json.Marshal([]interface{}{"EVENT", testEvent})
+	eventBytes, err := json.Marshal([]interface{}{"EVENT", testEvent})
 	require.NoError(t, err)
-	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, eventBytes))
 
 	subscriptionID := uuid.NewString()
-	reqBytes, err = json.Marshal([]interface{}{"REQ", subscriptionID, messages.Filter{IDs: []event.ID{testEvent.ID}}})
+	reqBytes, err := json.Marshal([]interface{}{"REQ", subscriptionID, messages.Filter{IDs: []event.ID{testEvent.ID}}})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 

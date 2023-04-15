@@ -1,12 +1,13 @@
 package component
 
 import (
-	//"github.com/nbd-wtf/go-nostr"
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"testing"
 
+	"github.com/OpenSourceOptimist/skyflow/test/help"
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -15,6 +16,16 @@ import (
 
 func TestMain(m *testing.M) {
 	fmt.Println("starting component test")
+	rURI := flag.String("relayURI", "", "relay to run test against, if omitted it starts up a relay locally")
+	flag.Parse()
+	relayURI := *rURI
+	if relayURI != "" {
+		help.SetDefaultURI(relayURI)
+		fmt.Println("running tests")
+		code := m.Run()
+		fmt.Println("cleaning up")
+		os.Exit(code)
+	}
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		fmt.Println("dockertest.NewPool: " + err.Error())
