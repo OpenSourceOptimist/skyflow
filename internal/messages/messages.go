@@ -9,7 +9,6 @@ import (
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
-	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"nhooyr.io/websocket"
 )
@@ -163,7 +162,11 @@ func (msg WebsocketMessage) AsCLOSE(session SessionID) (SubscriptionUUID, bool) 
 	return GenerateSubscriptionUUID(sub, session), true
 }
 
-func ListenForMessages(ctx context.Context, r MessageReader) <-chan WebsocketMessage {
+type DebugLogger interface {
+	Debug(msg string, keyVals ...interface{})
+}
+
+func ListenForMessages(ctx context.Context, r MessageReader, l DebugLogger) <-chan WebsocketMessage {
 	result := make(chan WebsocketMessage)
 	go func() {
 		for {
@@ -174,7 +177,7 @@ func ListenForMessages(ctx context.Context, r MessageReader) <-chan WebsocketMes
 			}
 			socketMsgType, data, err := r.Read(ctx)
 			if err != nil {
-				logrus.Debug("read error: " + err.Error())
+				l.Debug("read error: " + err.Error())
 				if strings.Contains(err.Error(), "WebSocket closed") {
 					return
 				}
@@ -192,7 +195,7 @@ func ListenForMessages(ctx context.Context, r MessageReader) <-chan WebsocketMes
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
-			logrus.Debug(string(data))
+			l.Debug(string(data))
 			if socketMsgType != websocket.MessageText {
 				result <- WebsocketMessage{Err: fmt.Errorf("unexpected message type: %d", socketMsgType)}
 				continue

@@ -63,7 +63,7 @@ func main() {
 		}()
 		ctx := r.Context()
 		subscriptionsAssosiatedWithRequest := make([]messages.SubscriptionUUID, 0)
-		websocketMessages := messages.ListenForMessages(ctx, conn)
+		websocketMessages := messages.ListenForMessages(ctx, conn, l)
 		for {
 			l.IncrementSession()
 			var msg messages.WebsocketMessage
