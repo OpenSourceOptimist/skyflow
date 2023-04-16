@@ -28,10 +28,10 @@ version: "2.1"
 
 services:
   skyflow:
-    image: ghcr.io/opensourceoptimist/skyflow:v0.1.5
+    image: ghcr.io/opensourceoptimist/skyflow:v0.1.7
     container_name: skyflow
     environment:
-      - MONGODB_URI=mongodb://mongo:2717
+      - MONGODB_URI=mongodb://mongo:27017
     expose:
       - 80
     restart: unless-stopped
@@ -45,6 +45,9 @@ services:
       context: ./caddy
     ports:
       - 443:443
+    volumes:
+     - ./caddy_data:/data
+     - ./caddy_config:/config
     restart: unless-stopped
 ```
 
