@@ -79,7 +79,10 @@ func main() {
 					}
 					subscriptionHandler.Cancel()
 					globalOngoingSubscriptions.Delete(subscriptionID)
-					_ = subscriptions.DeleteOne(ctx, subscriptionHandler.Details)
+					err = subscriptions.DeleteOne(ctx, subscriptionHandler.Details)
+					if err != nil {
+						l.Error("failed to delete subscription", "error", err)
+					}
 				}
 				return //nolint:govet
 			}
@@ -95,7 +98,10 @@ func main() {
 					continue
 				}
 				l.Debug("event over websocket", "eID", e.ID)
-				_ = eventDatabase.InsertOne(ctx, event.Structure(e))
+				err = eventDatabase.InsertOne(ctx, event.Structure(e))
+				if err != nil {
+					l.Error("failed to insert event in DB", "error", err)
+				}
 				for subscription := range subscriptions.Find(ctx, messages.SubscriptionFilter(e)) {
 					handle, ok := globalOngoingSubscriptions.Load(subscription.UUID())
 					if !ok {
@@ -116,7 +122,10 @@ func main() {
 				if _, ok := globalOngoingSubscriptions.Load(subscription.UUID()); ok {
 					continue
 				}
-				_ = subscriptions.InsertOne(ctx, subscription)
+				err = subscriptions.InsertOne(ctx, subscription)
+				if err != nil {
+					l.Error("failed to insert subscription in DB", "error", err)
+				}
 				newEvents := make(chan event.Event)
 				globalOngoingSubscriptions.Store(
 					subscription.UUID(),
@@ -152,7 +161,10 @@ func main() {
 				if !ok {
 					continue
 				}
-				_ = subscriptions.DeleteOne(ctx, subscriptionHandle.Details)
+				err = subscriptions.DeleteOne(ctx, subscriptionHandle.Details)
+				if err != nil {
+					l.Error("failed to delete subscription", "error", err)
+				}
 				subscriptionHandle.Cancel()
 				globalOngoingSubscriptions.Delete(subscriptionToClose)
 			}
