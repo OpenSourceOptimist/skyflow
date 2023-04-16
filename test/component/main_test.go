@@ -82,8 +82,27 @@ func TestMain(m *testing.M) {
 		fmt.Println("pool.BuildAndRun: " + err.Error())
 		return
 	}
+	err = pool.Retry(func() error {
+		t := ErrTestingT{}
+		_, _ = help.NewSocket(ctx, &t)
+		return t.err
+	})
+	if err != nil {
+		panic(err)
+	}
 	fmt.Println("running tests")
 	code := m.Run()
 	fmt.Println("cleaning up")
 	os.Exit(code)
+}
+
+type ErrTestingT struct {
+	err error
+}
+
+func (t *ErrTestingT) Errorf(format string, args ...interface{}) {
+	t.err = fmt.Errorf(format, args...)
+}
+func (t *ErrTestingT) FailNow() {
+	t.err = fmt.Errorf("FailNow")
 }
