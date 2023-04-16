@@ -21,6 +21,8 @@ I can assure the above goals.
 
 ## Setup https relay
 
+WARNING: This setup does not persist events, it is only usefull for testing.
+
 ```yaml
 version: "2.1"
 
