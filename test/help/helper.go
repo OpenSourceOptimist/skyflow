@@ -63,7 +63,7 @@ func Publish(ctx context.Context, t require.TestingT, e event.Event, conn *webso
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 }
 
-func RequestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filters ...messages.Filter) messages.SubscriptionID {
+func RequestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filters ...messages.Filter) (messages.SubscriptionID, Closer) {
 	if len(filters) == 0 {
 		filters = []messages.Filter{{}}
 	}
@@ -75,11 +75,12 @@ func RequestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filters
 	bytes, err := json.Marshal(requestMsg)
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, bytes))
-	return messages.SubscriptionID(subID)
+	typedSubID := messages.SubscriptionID(subID)
+	return typedSubID, func() { CloseSubscription(ctx, t, typedSubID, conn) }
 }
 
 func GetEvent(ctx context.Context, t *testing.T, conn *websocket.Conn, id event.ID, timeout time.Duration) (event.Event, bool) {
-	subID := RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{id}})
+	subID, _ := RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{id}})
 	select {
 	case e := <-ListenForEventsOnSub(ctx, t, conn, subID):
 		return e, true
@@ -132,7 +133,7 @@ func ReadEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) (message
 	return subscriptionID, resultEvent, nil
 }
 
-func CancelSub(ctx context.Context, t *testing.T, subID messages.SubscriptionID, conn *websocket.Conn) {
+func CloseSubscription(ctx context.Context, t *testing.T, subID messages.SubscriptionID, conn *websocket.Conn) {
 	bytes, err := json.Marshal([]interface{}{"CLOSE", subID})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, bytes))

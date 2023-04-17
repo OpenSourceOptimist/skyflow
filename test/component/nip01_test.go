@@ -50,10 +50,12 @@ func TestNIP01Closing(t *testing.T) {
 	defer cancel()
 	conn, closer := help.NewSocket(ctx, t)
 	defer closer()
-	subID1 := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{validEvent.ID}})
-	help.CancelSub(ctx, t, subID1, conn)
+	subID1, sub1Closer := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{validEvent.ID}})
+	defer sub1Closer()
+	help.CloseSubscription(ctx, t, subID1, conn)
 	help.Publish(ctx, t, validEvent, conn)
-	subID2 := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{validEvent.ID}})
+	subID2, sub2Closer := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{validEvent.ID}})
+	defer sub2Closer()
 	sub, e, err := help.ReadEvent(ctx, t, conn)
 	require.NoError(t, err)
 	require.Equal(t, subID2, sub)
@@ -193,7 +195,9 @@ func TestNIP01Filters(t *testing.T) {
 				filter.IDs = allIDs
 				modifiedFilters[i] = filter
 			}
-			sub := help.RequestSub(ctx, t, conn, modifiedFilters...)
+
+			sub, subCloser := help.RequestSub(ctx, t, conn, modifiedFilters...)
+			defer subCloser()
 			reciviedEvents := slice.ReadSlice(
 				help.ListenForEventsOnSub(ctx, t, conn, sub),
 				len(expectedRecivedEventsIDs),
@@ -222,7 +226,8 @@ func TestNIP01GetEventsAfterInitialSync(t *testing.T) {
 
 	conn2, closer2 := help.NewSocket(ctx, t)
 	defer closer2()
-	subID := help.RequestSub(ctx, t, conn2, messages.Filter{Authors: []event.PubKey{pub}})
+	subID, subCloser := help.RequestSub(ctx, t, conn2, messages.Filter{Authors: []event.PubKey{pub}})
+	defer subCloser()
 	subEvents := help.ListenForEventsOnSub(ctx, t, conn2, subID)
 	select {
 	case initialRecivedEvent := <-subEvents:
@@ -255,7 +260,8 @@ func TestNIP01VerificationEventID(t *testing.T) {
 	olderevent := help.Event(t, help.EventOptions{CreatedAt: time.Unix(0, 0)})
 	help.Publish(ctx, t, olderevent, conn)
 
-	subID := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{badEvent.ID, olderevent.ID}})
+	subID, subCloser := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{badEvent.ID, olderevent.ID}})
+	defer subCloser()
 	found := slice.ReadSlice(help.ListenForEventsOnSub(ctx, t, conn, subID), 1, time.Second)
 	require.Equal(t, []event.ID{olderevent.ID}, slice.Map(found, func(e event.Event) event.ID { return e.ID }))
 }
@@ -271,7 +277,8 @@ func TestNIP01VerificationSignature(t *testing.T) {
 	olderevent := help.Event(t, help.EventOptions{CreatedAt: time.Unix(0, 0)})
 	help.Publish(ctx, t, olderevent, conn)
 
-	subID := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{badEvent.ID, olderevent.ID}})
+	subID, subCloser := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{badEvent.ID, olderevent.ID}})
+	defer subCloser()
 	found := slice.ReadSlice(help.ListenForEventsOnSub(ctx, t, conn, subID), 1, time.Second)
 	require.Equal(t, []event.ID{olderevent.ID}, slice.Map(found, func(e event.Event) event.ID { return e.ID }))
 }
@@ -323,7 +330,7 @@ func TestNIP01DuplicateSubscriptionIDsBetweenSessionsClosing(t *testing.T) {
 	defer closer2()
 	require.NoError(t, conn2.Write(ctx, websocket.MessageText, bytes))
 
-	help.CancelSub(ctx, t, subID, conn2)
+	help.CloseSubscription(ctx, t, subID, conn2)
 
 	conn3, closer3 := help.NewSocket(ctx, t)
 	defer closer3()
