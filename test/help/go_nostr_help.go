@@ -54,26 +54,30 @@ func Event(t require.TestingT, opts ...EventOptions) event.Event {
 	for _, o := range opts {
 		if o.PrivKey != "" {
 			opt.PrivKey = o.PrivKey
+		} else {
+			opt.PrivKey = PrivKey(nostr.GeneratePrivateKey())
 		}
 		var nilTime time.Time
 		if o.CreatedAt != nilTime {
 			opt.CreatedAt = o.CreatedAt
+		} else {
+			opt.CreatedAt = time.Now()
 		}
 		if o.Kind != 0 {
 			opt.Kind = o.Kind
+		} else {
+			opt.Kind = 1
 		}
 		if o.Tags != nil {
 			opt.Tags = o.Tags
 		}
 		if o.Content != "" {
 			opt.Content = o.Content
+		} else {
+			opt.Content = "test123"
 		}
 	}
-	privKey := opt.PrivKey
-	if privKey == "" {
-		privKey = PrivKey(nostr.GeneratePrivateKey())
-	}
-	pubKey, err := nostr.GetPublicKey(privKey.String())
+	pubKey, err := nostr.GetPublicKey(opt.PrivKey.String())
 	require.NoError(t, err, "generating pubkey")
 	if opt.Content == "" {
 		opt.Content = uuid.NewString()
@@ -85,7 +89,7 @@ func Event(t require.TestingT, opts ...EventOptions) event.Event {
 		Tags:      opt.Tags,
 		Content:   opt.Content,
 	}
-	require.NoError(t, e.Sign(privKey.String()), "signing test event")
+	require.NoError(t, e.Sign(opt.PrivKey.String()), "signing test event")
 	return toEvent(*e)
 }
 
