@@ -180,3 +180,11 @@ func min(a int, b int) int {
 	}
 	return a
 }
+
+func End[S ~[]T, T any](slice S) (T, bool) {
+	if len(slice) == 0 {
+		var nilT T
+		return nilT, false
+	}
+	return slice[len(slice)-1], true
+}
