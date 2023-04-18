@@ -31,14 +31,14 @@ func GenerateSubscriptionUUID(id SubscriptionID, session SessionID) Subscription
 }
 
 type Filter struct {
-	IDs     []event.ID      `json:"ids" bson:"ids"`
-	Authors []event.PubKey  `json:"authors" bson:"authors"`
-	Kinds   []event.Kind    `json:"kinds" bson:"kinds"`
-	E       []event.ID      `json:"#e" bson:"#e"`
-	P       []event.PubKey  `json:"#p" bson:"#p"`
-	Since   event.Timestamp `json:"since" bson:"since"`
-	Until   event.Timestamp `json:"until" bson:"until"`
-	Limit   int64           `json:"limit" bson:"limit"`
+	IDs     []event.ID      `json:"ids,omitempty" bson:"ids"`
+	Authors []event.PubKey  `json:"authors,omitempty" bson:"authors"`
+	Kinds   []event.Kind    `json:"kinds,omitempty" bson:"kinds"`
+	E       []event.ID      `json:"#e,omitempty" bson:"#e"`
+	P       []event.PubKey  `json:"#p,omitempty" bson:"#p"`
+	Since   event.Timestamp `json:"since,omitempty" bson:"since"`
+	Until   event.Timestamp `json:"until,omitempty" bson:"until"`
+	Limit   int64           `json:"limit,omitempty" bson:"limit"`
 }
 
 func (e Subscription) UniqueMatch() primitive.M {
