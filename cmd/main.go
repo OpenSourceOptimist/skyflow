@@ -87,7 +87,7 @@ func main() {
 				return //nolint:govet
 			}
 			if msg.Err != nil {
-				l.Error("error", err)
+				l.Error("error reading websocket message", "error", msg.Err)
 				continue
 			}
 			switch msg.MsgType {
