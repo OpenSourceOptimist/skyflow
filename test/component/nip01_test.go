@@ -32,16 +32,27 @@ func TestNIP01BasicFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 
-	msgType, responseBytes, err := conn.Read(ctx)
-	require.NoError(t, err)
-	require.Equal(t, websocket.MessageText, msgType)
+	timeout := time.After(time.Second)
+	for {
+		msgType, responseBytes, err := conn.Read(ctx)
+		require.NoError(t, err)
+		require.Equal(t, websocket.MessageText, msgType)
+		//fmt.Printf("got message: %s\n", string(responseBytes))
 
-	var eventDataMsg []json.RawMessage
-	require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
-	require.Len(t, eventDataMsg, 3)
-	var recivedMsgType string
-	require.NoError(t, json.Unmarshal(eventDataMsg[0], &recivedMsgType))
-	require.Equal(t, "EVENT", recivedMsgType)
+		var eventDataMsg []json.RawMessage
+		require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
+		var recivedMsgType string
+		require.NoError(t, json.Unmarshal(eventDataMsg[0], &recivedMsgType))
+		if recivedMsgType == "EVENT" {
+			require.Len(t, eventDataMsg, 3)
+			return
+		}
+		select {
+		case <-timeout:
+			require.FailNow(t, "timed out waiting for event")
+		default:
+		}
+	}
 }
 
 func TestNIP01Closing(t *testing.T) {
