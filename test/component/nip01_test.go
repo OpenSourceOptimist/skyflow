@@ -159,7 +159,7 @@ func TestNIP01Filters(t *testing.T) {
 				help.EventWithCreatedAt(t, time.Unix(200, 0)),
 				help.EventWithCreatedAt(t, time.Unix(300, 0)),
 			},
-			filter:                 []messages.Filter{{Since: event.Timestamp(200)}},
+			filter:                 []messages.Filter{{Since: event.Timestamp(201)}},
 			recivedEventsAtIndices: []int{2},
 		},
 		{
@@ -169,7 +169,7 @@ func TestNIP01Filters(t *testing.T) {
 				help.EventWithCreatedAt(t, time.Unix(200, 0)),
 				help.EventWithCreatedAt(t, time.Unix(300, 0)),
 			},
-			filter:                 []messages.Filter{{Until: event.Timestamp(200)}},
+			filter:                 []messages.Filter{{Until: event.Timestamp(199)}},
 			recivedEventsAtIndices: []int{0},
 		},
 		{
@@ -179,7 +179,7 @@ func TestNIP01Filters(t *testing.T) {
 				help.EventWithCreatedAt(t, time.Unix(200, 0)),
 				help.EventWithCreatedAt(t, time.Unix(300, 0)),
 			},
-			filter:                 []messages.Filter{{Since: 100, Until: 300}},
+			filter:                 []messages.Filter{{Since: 101, Until: 299}},
 			recivedEventsAtIndices: []int{1},
 		},
 	}
