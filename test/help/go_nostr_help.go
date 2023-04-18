@@ -50,31 +50,29 @@ func WithContent(content string) EventOptions {
 }
 
 func Event(t require.TestingT, opts ...EventOptions) event.Event {
-	var opt EventOptions
+	opt := EventOptions{
+		PrivKey:   PrivKey(nostr.GeneratePrivateKey()),
+		CreatedAt: time.Now(),
+		Kind:      1,
+		Content:   "test123",
+	}
 	for _, o := range opts {
-		if o.PrivKey != "" {
+		var nilPrivKey PrivKey
+		if o.PrivKey != nilPrivKey {
 			opt.PrivKey = o.PrivKey
-		} else {
-			opt.PrivKey = PrivKey(nostr.GeneratePrivateKey())
 		}
 		var nilTime time.Time
 		if o.CreatedAt != nilTime {
 			opt.CreatedAt = o.CreatedAt
-		} else {
-			opt.CreatedAt = time.Now()
 		}
 		if o.Kind != 0 {
 			opt.Kind = o.Kind
-		} else {
-			opt.Kind = 1
 		}
 		if o.Tags != nil {
 			opt.Tags = o.Tags
 		}
 		if o.Content != "" {
 			opt.Content = o.Content
-		} else {
-			opt.Content = "test123"
 		}
 	}
 	pubKey, err := nostr.GetPublicKey(opt.PrivKey.String())
