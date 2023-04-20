@@ -3,6 +3,7 @@ package help
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -111,6 +112,46 @@ func GetEvent(ctx context.Context, t *testing.T, id event.ID, timeout time.Durat
 	defer closer()
 	subID, _ := RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{id}})
 	return ReadEvent(ctx, t, read, subID, timeout)
+}
+
+func StoredEvents(
+	t *testing.T,
+	read <-chan MsgRead,
+	sub messages.SubscriptionID,
+	timeout time.Duration) ([]event.Event, error) {
+	events := make([]event.Event, 0)
+	giveUp := time.After(timeout)
+	for {
+		var responseBytes MsgRead
+		select {
+		case responseBytes = <-read:
+		case <-giveUp:
+			return nil, fmt.Errorf("timeout")
+		}
+		var eventDataMsg []json.RawMessage
+		require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
+		var recivedMsgType string
+		require.NoError(t, json.Unmarshal(eventDataMsg[0], &recivedMsgType))
+		if recivedMsgType == "EOSE" {
+			var subscriptionID messages.SubscriptionID
+			require.NoError(t, json.Unmarshal(eventDataMsg[1], &subscriptionID))
+			if subscriptionID == sub {
+				return events, nil
+			}
+		}
+		if recivedMsgType != "EVENT" {
+			fmt.Println(string(responseBytes))
+			continue
+		}
+		require.Len(t, eventDataMsg, 3)
+		var subscriptionID messages.SubscriptionID
+		require.NoError(t, json.Unmarshal(eventDataMsg[1], &subscriptionID))
+		var resultEvent event.Event
+		require.NoError(t, json.Unmarshal(eventDataMsg[2], &resultEvent))
+		require.NoError(t, event.VerifyEvent(resultEvent), "verifying validity of recived event")
+		events = append(events, resultEvent)
+	}
+	return nil, fmt.Errorf("read closed")
 }
 
 func ListenForEventsOnSub(

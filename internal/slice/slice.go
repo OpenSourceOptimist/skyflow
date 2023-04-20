@@ -46,7 +46,20 @@ func FindAll[T any, K any](slice []T, f func(T) (K, bool)) []K {
 	return res
 }
 
-func ChanConcatenate[T any](head <-chan T, tail <-chan T) <-chan T {
+func ChanConcatenate[T any](channels ...<-chan T) <-chan T {
+	if len(channels) == 0 {
+		res := make(chan T)
+		close(res)
+		return res
+	}
+	if len(channels) == 1 {
+		return channels[0]
+	}
+	firstChannel := channels[0]
+	return Fold(channels[1:], chanConcatenate[T], firstChannel)
+}
+
+func chanConcatenate[T any](head <-chan T, tail <-chan T) <-chan T {
 	res := make(chan T)
 	go func() {
 		for t := range head {
@@ -58,6 +71,15 @@ func ChanConcatenate[T any](head <-chan T, tail <-chan T) <-chan T {
 	}()
 	return res
 }
+
+func Fold[T any](slice []T, op func(T, T) T, initialValue T) T {
+	res := initialValue
+	for _, t := range slice {
+		res = op(res, t)
+	}
+	return res
+}
+
 func AsyncWrite[T any](ctx context.Context, c chan<- T, t T) {
 	go func() {
 		select {
@@ -104,6 +126,40 @@ func MapChan[T any, K any](ctx context.Context, c <-chan T, f func(T) K) <-chan 
 		}
 	}()
 	return res
+}
+
+func MapChanSkipErrors[T any, K any](ctx context.Context, c <-chan T, f func(T) (K, error)) <-chan K {
+	res := make(chan K)
+	go func() {
+		for {
+			select {
+			case t, ok := <-c:
+				if !ok {
+					close(res)
+					return // channel closed
+				}
+				fRes, err := f(t)
+				if err != nil {
+					continue
+				}
+				select {
+				case res <- fRes:
+				case <-ctx.Done():
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return res
+}
+
+func AsClosedChan[T any](t T) <-chan T {
+	c := make(chan T, 1)
+	c <- t
+	close(c)
+	return c
 }
 
 func AsAny[T any](slice []T) []any {

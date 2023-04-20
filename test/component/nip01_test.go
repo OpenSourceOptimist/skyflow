@@ -338,3 +338,16 @@ func TestNIP01DuplicateSubscriptionIDsBetweenSessionsClosing(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, eventSent.ID, e.ID)
 }
+
+func TestNIP01SendEOSE(t *testing.T) {
+	ctx, ctxCloser := context.WithTimeout(context.Background(), time.Second)
+	defer ctxCloser()
+	conn, read, connCloser := help.NewSocket(ctx, t)
+	defer connCloser()
+	subWithouthMatches, subCloser := help.RequestSub(ctx, t, conn,
+		messages.Filter{IDs: []event.ID{event.ID(uuid.NewString())}},
+	)
+	defer subCloser()
+	_, err := help.StoredEvents(t, read, subWithouthMatches, time.Second)
+	require.NoError(t, err)
+}
