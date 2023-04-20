@@ -19,7 +19,7 @@ func TestNIP01BasicFlow(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	conn, closer := help.NewSocket(ctx, t)
+	conn, read, closer := help.NewSocket(ctx, t)
 	defer closer()
 
 	testEvent := help.Event(t, help.EventOptions{})
@@ -33,12 +33,7 @@ func TestNIP01BasicFlow(t *testing.T) {
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 
 	timeout := time.After(time.Second)
-	for {
-		msgType, responseBytes, err := conn.Read(ctx)
-		require.NoError(t, err)
-		require.Equal(t, websocket.MessageText, msgType)
-		//fmt.Printf("got message: %s\n", string(responseBytes))
-
+	for responseBytes := range read {
 		var eventDataMsg []json.RawMessage
 		require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
 		var recivedMsgType string
@@ -59,7 +54,7 @@ func TestNIP01Closing(t *testing.T) {
 	validEvent := help.Event(t, help.EventOptions{})
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	conn, closer := help.NewSocket(ctx, t)
+	conn, read, closer := help.NewSocket(ctx, t)
 	defer closer()
 	subID1, sub1Closer := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{validEvent.ID}})
 	defer sub1Closer()
@@ -67,9 +62,8 @@ func TestNIP01Closing(t *testing.T) {
 	help.Publish(ctx, t, validEvent, conn)
 	subID2, sub2Closer := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{validEvent.ID}})
 	defer sub2Closer()
-	sub, e, err := help.ReadEvent(ctx, t, conn)
-	require.NoError(t, err)
-	require.Equal(t, subID2, sub)
+	e, found := help.ReadEvent(ctx, t, read, subID2, time.Second)
+	require.True(t, found)
 	require.Equal(t, e.ID, e.ID)
 }
 
@@ -188,10 +182,12 @@ func TestNIP01Filters(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			conn, closer := help.NewSocket(ctx, t)
+			conn, read, closer := help.NewSocket(ctx, t)
 			defer closer()
 			for _, e := range tc.allEvents {
 				help.Publish(ctx, t, e, conn)
+				_, found := help.GetEvent(ctx, t, e.ID, time.Second)
+				require.True(t, found, "event in setup not found after publishing it")
 			}
 			expectedRecivedEventsIDs := make([]event.ID, len(tc.recivedEventsAtIndices))
 			for i, index := range tc.recivedEventsAtIndices {
@@ -210,7 +206,7 @@ func TestNIP01Filters(t *testing.T) {
 			sub, subCloser := help.RequestSub(ctx, t, conn, modifiedFilters...)
 			defer subCloser()
 			reciviedEvents := slice.ReadSlice(
-				help.ListenForEventsOnSub(ctx, t, conn, sub),
+				help.ListenForEventsOnSub(ctx, t, read, sub, time.Second),
 				len(expectedRecivedEventsIDs),
 				time.Second,
 			)
@@ -228,41 +224,34 @@ func TestNIP01Filters(t *testing.T) {
 func TestNIP01GetEventsAfterInitialSync(t *testing.T) {
 	priv, pub := help.NewKeyPair(t)
 	ctx := context.Background()
-	conn1, closer1 := help.NewSocket(ctx, t)
+	conn1, _, closer1 := help.NewSocket(ctx, t)
 	defer closer1()
 	initialPublishedEvent := help.Event(t, help.EventOptions{PrivKey: priv, Content: "hello world"})
 	help.Publish(ctx, t, initialPublishedEvent, conn1)
-	_, found := help.GetEvent(ctx, t, conn1, initialPublishedEvent.ID, time.Second)
+	_, found := help.GetEvent(ctx, t, initialPublishedEvent.ID, time.Second)
 	require.True(t, found)
 
-	conn2, closer2 := help.NewSocket(ctx, t)
+	conn2, read2, closer2 := help.NewSocket(ctx, t)
 	defer closer2()
 	subID, subCloser := help.RequestSub(ctx, t, conn2, messages.Filter{Authors: []event.PubKey{pub}})
 	defer subCloser()
-	subEvents := help.ListenForEventsOnSub(ctx, t, conn2, subID)
-	select {
-	case initialRecivedEvent := <-subEvents:
-		require.Equal(t, initialPublishedEvent, initialRecivedEvent)
-	case <-time.After(time.Second):
-		require.Fail(t, "timed out waiting for initial event to be recived")
-	}
+	initialRecivedEvent, found := help.ReadEvent(ctx, t, read2, subID, time.Second)
+	require.True(t, found)
+	require.Equal(t, initialPublishedEvent, initialRecivedEvent)
 
 	secondPublishedEvent := help.Event(t, help.EventOptions{PrivKey: priv, Content: "hello again"})
 	help.Publish(ctx, t, secondPublishedEvent, conn1)
-	_, found = help.GetEvent(ctx, t, conn1, secondPublishedEvent.ID, time.Second)
+	_, found = help.GetEvent(ctx, t, secondPublishedEvent.ID, time.Second)
 	require.True(t, found)
 
-	select {
-	case secondRecivedEvent := <-subEvents:
-		require.Equal(t, secondPublishedEvent, secondRecivedEvent)
-	case <-time.After(time.Second):
-		require.Fail(t, "timed out waiting for second event to be recived")
-	}
+	secondRecivedEvent, found := help.ReadEvent(ctx, t, read2, subID, time.Second)
+	require.True(t, found)
+	require.Equal(t, secondPublishedEvent, secondRecivedEvent)
 }
 
 func TestNIP01VerificationEventID(t *testing.T) {
 	ctx := context.Background()
-	conn, closer := help.NewSocket(ctx, t)
+	conn, read, closer := help.NewSocket(ctx, t)
 	defer closer()
 
 	badEvent := help.Event(t, help.EventOptions{CreatedAt: time.Unix(1000, 0)})
@@ -273,13 +262,14 @@ func TestNIP01VerificationEventID(t *testing.T) {
 
 	subID, subCloser := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{badEvent.ID, olderevent.ID}})
 	defer subCloser()
-	found := slice.ReadSlice(help.ListenForEventsOnSub(ctx, t, conn, subID), 1, time.Second)
-	require.Equal(t, []event.ID{olderevent.ID}, slice.Map(found, func(e event.Event) event.ID { return e.ID }))
+	foundEvent, found := help.ReadEvent(ctx, t, read, subID, time.Second)
+	require.True(t, found)
+	require.Equal(t, olderevent.ID, foundEvent.ID)
 }
 
 func TestNIP01VerificationSignature(t *testing.T) {
 	ctx := context.Background()
-	conn, closer := help.NewSocket(ctx, t)
+	conn, read, closer := help.NewSocket(ctx, t)
 	defer closer()
 
 	badEvent := help.Event(t, help.EventOptions{CreatedAt: time.Unix(1000, 0)})
@@ -290,8 +280,9 @@ func TestNIP01VerificationSignature(t *testing.T) {
 
 	subID, subCloser := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{badEvent.ID, olderevent.ID}})
 	defer subCloser()
-	found := slice.ReadSlice(help.ListenForEventsOnSub(ctx, t, conn, subID), 1, time.Second)
-	require.Equal(t, []event.ID{olderevent.ID}, slice.Map(found, func(e event.Event) event.ID { return e.ID }))
+	foundEvent, found := help.ReadEvent(ctx, t, read, subID, time.Second)
+	require.True(t, found)
+	require.Equal(t, olderevent.ID, foundEvent.ID)
 }
 
 func TestNIP01DuplicateSubscriptionIDsBetweenSessions(t *testing.T) {
@@ -301,29 +292,25 @@ func TestNIP01DuplicateSubscriptionIDsBetweenSessions(t *testing.T) {
 	bytes, err := json.Marshal([]interface{}{"REQ", subID, messages.Filter{IDs: []event.ID{eventSent.ID}}})
 	require.NoError(t, err)
 
-	conn1, closer1 := help.NewSocket(ctx, t)
+	conn1, read1, closer1 := help.NewSocket(ctx, t)
 	defer closer1()
 	require.NoError(t, conn1.Write(ctx, websocket.MessageText, bytes))
 
-	conn2, closer2 := help.NewSocket(ctx, t)
+	conn2, read2, closer2 := help.NewSocket(ctx, t)
 	defer closer2()
 	require.NoError(t, conn2.Write(ctx, websocket.MessageText, bytes))
 
-	conn3, closer3 := help.NewSocket(ctx, t)
+	conn3, _, closer3 := help.NewSocket(ctx, t)
 	defer closer3()
 	help.Publish(ctx, t, eventSent, conn3)
-	select {
-	case e := <-help.ListenForEventsOnSub(ctx, t, conn1, messages.SubscriptionID(subID)):
-		require.Equal(t, eventSent.ID, e.ID)
-	case <-time.After(time.Second):
-		require.Fail(t, "timed out waiting for event")
-	}
-	select {
-	case e := <-help.ListenForEventsOnSub(ctx, t, conn2, messages.SubscriptionID(subID)):
-		require.Equal(t, eventSent.ID, e.ID)
-	case <-time.After(time.Second):
-		require.Fail(t, "timed out waiting for event")
-	}
+
+	e, found := help.ReadEvent(ctx, t, read1, messages.SubscriptionID(subID), time.Second)
+	require.True(t, found)
+	require.Equal(t, eventSent.ID, e.ID)
+
+	e, found = help.ReadEvent(ctx, t, read2, messages.SubscriptionID(subID), time.Second)
+	require.True(t, found)
+	require.Equal(t, eventSent.ID, e.ID)
 }
 
 func TestNIP01DuplicateSubscriptionIDsBetweenSessionsClosing(t *testing.T) {
@@ -333,24 +320,21 @@ func TestNIP01DuplicateSubscriptionIDsBetweenSessionsClosing(t *testing.T) {
 	bytes, err := json.Marshal([]interface{}{"REQ", subID, messages.Filter{IDs: []event.ID{eventSent.ID}}})
 	require.NoError(t, err)
 
-	conn1, closer1 := help.NewSocket(ctx, t)
+	conn1, read1, closer1 := help.NewSocket(ctx, t)
 	defer closer1()
 	require.NoError(t, conn1.Write(ctx, websocket.MessageText, bytes))
 
-	conn2, closer2 := help.NewSocket(ctx, t)
+	conn2, _, closer2 := help.NewSocket(ctx, t)
 	defer closer2()
 	require.NoError(t, conn2.Write(ctx, websocket.MessageText, bytes))
 
 	help.CloseSubscription(ctx, t, subID, conn2)
 
-	conn3, closer3 := help.NewSocket(ctx, t)
+	conn3, _, closer3 := help.NewSocket(ctx, t)
 	defer closer3()
 	help.Publish(ctx, t, eventSent, conn3)
 
-	select {
-	case e := <-help.ListenForEventsOnSub(ctx, t, conn1, subID):
-		require.Equal(t, eventSent.ID, e.ID)
-	case <-time.After(time.Second):
-		require.Fail(t, "timed out waiting for event")
-	}
+	e, found := help.ReadEvent(ctx, t, read1, subID, time.Second)
+	require.True(t, found)
+	require.Equal(t, eventSent.ID, e.ID)
 }

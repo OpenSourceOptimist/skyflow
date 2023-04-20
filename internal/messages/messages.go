@@ -1,16 +1,12 @@
 package messages
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"nhooyr.io/websocket"
 )
 
 type SubscriptionID string
@@ -122,9 +118,6 @@ func EventFilter(filter Filter) primitive.M {
 	return query
 }
 
-type MessageReader interface {
-	Read(ctx context.Context) (websocket.MessageType, []byte, error)
-}
 type MessageType string
 
 const (
@@ -166,118 +159,71 @@ type DebugLogger interface {
 	Debug(msg string, keyVals ...interface{})
 }
 
-func ListenForMessages(ctx context.Context, r MessageReader, l DebugLogger) <-chan WebsocketMessage {
-	result := make(chan WebsocketMessage)
-	go func() {
-		for {
-			err := ctx.Err()
-			if err != nil {
-				result <- WebsocketMessage{Err: fmt.Errorf("context cancelled: %w", err)}
-				return
-			}
-			socketMsgType, data, err := r.Read(ctx)
-			if err != nil {
-				l.Debug("read error: " + err.Error())
-				if strings.Contains(err.Error(), "WebSocket closed") {
-					return
-				}
-				if strings.Contains(err.Error(), "connection reset by peer") {
-					return
-				}
-				if strings.Contains(err.Error(), "StatusGoingAway") {
-					return
-				}
-				if strings.Contains(err.Error(), "EOF") {
-					return
-				}
-				result <- WebsocketMessage{Err: fmt.Errorf("websocket read error: %w", err)}
-				// TODO: this should probably be exponential in some smart way
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-			l.Debug(string(data))
-			if socketMsgType != websocket.MessageText {
-				result <- WebsocketMessage{Err: fmt.Errorf("unexpected message type: %d", socketMsgType)}
-				continue
-			}
-			var message []json.RawMessage
-			err = json.Unmarshal(data, &message)
-			if err != nil {
-				result <- WebsocketMessage{Err: fmt.Errorf("unmarshal message: %w: %s", err, data)}
-				continue
-			}
-			if len(message) == 0 {
-				result <- WebsocketMessage{Err: fmt.Errorf("empty message")}
-				continue
-			}
-			var msgType string
-			err = json.Unmarshal(message[0], &msgType)
-			if err != nil {
-				result <- WebsocketMessage{Err: fmt.Errorf("unmarshalling message type: %w", err)}
-				continue
-			}
-			switch msgType {
-			case "EVENT":
-				if len(message) != 2 {
-					result <- WebsocketMessage{Err: fmt.Errorf("wrong event length: %s", string(data))}
-					continue
-				}
-				var e event.Event
-				err := json.Unmarshal(message[1], &e)
-				if err != nil {
-					result <- WebsocketMessage{Err: fmt.Errorf("unmarshal event message: %s", string(data))}
-					continue
-				}
-				err = event.VerifyEvent(e)
-				if err != nil {
-					result <- WebsocketMessage{Err: fmt.Errorf("event verification: %w", err)}
-					continue
-				}
-				go func(eventToSend event.Event) {
-					result <- WebsocketMessage{MsgType: EVENT, Value: eventToSend}
-				}(e)
-			case "REQ":
-				if len(message) < 3 {
-					result <- WebsocketMessage{Err: fmt.Errorf("wrong event request lenght: %s", string(data))}
-					continue
-				}
-				var subID SubscriptionID
-				err = json.Unmarshal(message[1], &subID)
-				if err != nil {
-					result <- WebsocketMessage{Err: fmt.Errorf("unmatshal sub id: %w", err)}
-					continue
-				}
-				subscription := Subscription{ID: subID}
-				filters := make([]Filter, 0, len(message[2:]))
-				for _, element := range message[2:] {
-					var filter Filter
-					err := json.Unmarshal(element, &filter)
-					if err != nil {
-						result <- WebsocketMessage{Err: fmt.Errorf("unmarshal request message: %s", string(data))}
-						continue //TODO: bug alert
-					}
-					filters = append(filters, filter)
-				}
-				subscription.Filters = filters
-				go func(sub Subscription) {
-					result <- WebsocketMessage{MsgType: REQ, Value: sub}
-				}(subscription)
-			case "CLOSE":
-				if len(message) != 2 {
-					result <- WebsocketMessage{Err: fmt.Errorf("wrong close message lenght: %s", string(data))}
-					continue
-				}
-				var subscriptionID SubscriptionID
-				err = json.Unmarshal(message[1], &subscriptionID)
-				if err != nil {
-					result <- WebsocketMessage{Err: fmt.Errorf("unmatshal sub id: %w", err)}
-					continue
-				}
-				go func(subID SubscriptionID) {
-					result <- WebsocketMessage{MsgType: CLOSE, Value: subID}
-				}(subscriptionID)
-			}
+func errorMsgf(format string, a ...any) WebsocketMessage {
+	return WebsocketMessage{Err: fmt.Errorf(format, a...)}
+}
+
+func ParseWebsocketMsg(data []byte) WebsocketMessage {
+	var message []json.RawMessage
+	err := json.Unmarshal(data, &message)
+	if err != nil {
+		return errorMsgf("unmarshal message: %w: %s", err, data)
+	}
+	if len(message) == 0 {
+		return errorMsgf("empty message")
+	}
+	var msgType string
+	err = json.Unmarshal(message[0], &msgType)
+	if err != nil {
+		return errorMsgf("unmarshalling message type: %w", err)
+	}
+	switch msgType {
+	case "EVENT":
+		if len(message) != 2 {
+			return errorMsgf("wrong event length: %s", string(data))
 		}
-	}()
-	return result
+		var e event.Event
+		err := json.Unmarshal(message[1], &e)
+		if err != nil {
+			return errorMsgf("unmarshal event message: %s", string(data))
+		}
+		err = event.VerifyEvent(e)
+		if err != nil {
+			return errorMsgf("event verification: %w", err)
+		}
+		return WebsocketMessage{MsgType: EVENT, Value: e}
+	case "REQ":
+		if len(message) < 3 {
+			return errorMsgf("wrong event request lenght: %s", string(data))
+		}
+		var subID SubscriptionID
+		err := json.Unmarshal(message[1], &subID)
+		if err != nil {
+			return errorMsgf("unmatshal sub id: %w", err)
+		}
+		subscription := Subscription{ID: subID}
+		filters := make([]Filter, 0, len(message[2:]))
+		for _, element := range message[2:] {
+			var filter Filter
+			err := json.Unmarshal(element, &filter)
+			if err != nil {
+				return errorMsgf("unmarshal request message: %s", string(data))
+			}
+			filters = append(filters, filter)
+		}
+		subscription.Filters = filters
+		return WebsocketMessage{MsgType: REQ, Value: subscription}
+	case "CLOSE":
+		if len(message) != 2 {
+			return errorMsgf("wrong close message lenght: %s", string(data))
+		}
+		var subscriptionID SubscriptionID
+		err := json.Unmarshal(message[1], &subscriptionID)
+		if err != nil {
+			return errorMsgf("unmatshal sub id: %w", err)
+		}
+		return WebsocketMessage{MsgType: CLOSE, Value: subscriptionID}
+	default:
+		return errorMsgf("unknown msg type: %s", msgType)
+	}
 }

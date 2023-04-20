@@ -11,7 +11,7 @@ import (
 func main() {
 	t := &PanicTestingT{}
 	ctx := context.Background()
-	conn, closer := help.NewSocket(ctx, t, help.WithURI("wss://relay.nostry.eu"))
+	conn, _, closer := help.NewSocket(ctx, t, help.WithURI("wss://relay.nostry.eu"))
 	defer closer()
 	count := 200
 	before := time.Now()
