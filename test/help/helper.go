@@ -32,7 +32,17 @@ func SetDefaultURI(uri string) {
 	defaultURI = uri
 }
 
-func NewSocket(ctx context.Context, t require.TestingT, opts ...SocketOpts) (*websocket.Conn, Closer) {
+type MsgRead []byte
+
+type MsgWriter struct {
+	conn *websocket.Conn
+}
+
+func (w *MsgWriter) Write(ctx context.Context, typ websocket.MessageType, p []byte) error {
+	return w.conn.Write(ctx, typ, p)
+}
+
+func NewSocket(ctx context.Context, t require.TestingT, opts ...SocketOpts) (MsgWriter, <-chan MsgRead, Closer) {
 	uri := defaultURI
 	for _, opt := range opts {
 		if opt.URI != "" {
@@ -43,10 +53,23 @@ func NewSocket(ctx context.Context, t require.TestingT, opts ...SocketOpts) (*we
 	require.NoError(t, err, "websocket dial error")
 	if resp == nil {
 		t.FailNow()
-		return nil, func() {}
+		return MsgWriter{}, nil, func() {}
 	}
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode, "handshake status")
-	return conn, func() { conn.Close(websocket.StatusGoingAway, "bye") }
+	read := make(chan MsgRead)
+	go func() {
+		for {
+			msgType, msg, err := conn.Read(ctx)
+			if err != nil {
+				return
+			}
+			require.Equal(t, websocket.MessageText, msgType)
+			go func(b []byte) {
+				read <- MsgRead(b)
+			}(msg)
+		}
+	}()
+	return MsgWriter{conn: conn}, read, func() { conn.Close(websocket.StatusGoingAway, "bye") }
 }
 
 func toEvent(ne nostr.Event) event.Event {
@@ -61,13 +84,13 @@ func toEvent(ne nostr.Event) event.Event {
 	}
 }
 
-func Publish(ctx context.Context, t require.TestingT, e event.Event, conn *websocket.Conn) {
+func Publish(ctx context.Context, t require.TestingT, e event.Event, conn MsgWriter) {
 	reqBytes, err := json.Marshal([]interface{}{"EVENT", e})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, reqBytes))
 }
 
-func RequestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filters ...messages.Filter) (messages.SubscriptionID, Closer) {
+func RequestSub(ctx context.Context, t *testing.T, conn MsgWriter, filters ...messages.Filter) (messages.SubscriptionID, Closer) {
 	if len(filters) == 0 {
 		filters = []messages.Filter{{}}
 	}
@@ -84,59 +107,63 @@ func RequestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filters
 }
 
 func GetEvent(ctx context.Context, t *testing.T, id event.ID, timeout time.Duration) (event.Event, bool) {
-	conn, closer := NewSocket(ctx, t)
+	conn, read, closer := NewSocket(ctx, t)
 	defer closer()
 	subID, _ := RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{id}})
-	select {
-	case e := <-ListenForEventsOnSub(ctx, t, conn, subID):
-		return e, true
-	case <-time.After(timeout):
-		return event.Event{}, false
-	}
+	return ReadEvent(ctx, t, read, subID, timeout)
 }
 
 func ListenForEventsOnSub(
-	ctx context.Context, t *testing.T, conn *websocket.Conn, sub messages.SubscriptionID,
-) <-chan event.Event {
-	events := make(chan event.Event)
+	ctx context.Context,
+	t *testing.T,
+	read <-chan MsgRead,
+	sub messages.SubscriptionID,
+	timeout time.Duration) chan event.Event {
+	result := make(chan event.Event)
 	go func() {
 		for {
-			id, e, err := ReadEvent(ctx, t, conn)
-			if err != nil {
+			e, found := ReadEvent(ctx, t, read, sub, timeout)
+			if !found {
+				close(result)
 				return
 			}
-			if id != sub {
-				continue
-			}
-			go func(ev event.Event) {
-				events <- ev
-			}(e)
+			result <- e
 		}
 	}()
-	return events
+	return result
 }
-func ReadEvent(ctx context.Context, t *testing.T, conn *websocket.Conn) (messages.SubscriptionID, event.Event, error) {
-	msgType, responseBytes, err := conn.Read(ctx)
-	if err != nil {
-		return messages.SubscriptionID(""), event.Event{}, err
+
+func ReadEvent(ctx context.Context, t *testing.T, read <-chan MsgRead, sub messages.SubscriptionID, timeout time.Duration) (event.Event, bool) {
+	giveUp := time.After(timeout)
+	for responseBytes := range read {
+		select {
+		case <-giveUp:
+			return event.Event{}, false
+		default:
+		}
+		var eventDataMsg []json.RawMessage
+		require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
+		var recivedMsgType string
+		require.NoError(t, json.Unmarshal(eventDataMsg[0], &recivedMsgType))
+		if recivedMsgType != "EVENT" {
+			continue
+		}
+		require.Equal(t, "EVENT", recivedMsgType)
+		require.Len(t, eventDataMsg, 3)
+		var subscriptionID messages.SubscriptionID
+		require.NoError(t, json.Unmarshal(eventDataMsg[1], &subscriptionID))
+		if subscriptionID != sub {
+			continue
+		}
+		var resultEvent event.Event
+		require.NoError(t, json.Unmarshal(eventDataMsg[2], &resultEvent))
+		require.NoError(t, event.VerifyEvent(resultEvent), "verifying validity of recived event")
+		return resultEvent, true
 	}
-	require.Equal(t, websocket.MessageText, msgType)
-
-	var eventDataMsg []json.RawMessage
-	require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
-	require.Len(t, eventDataMsg, 3)
-	var recivedMsgType string
-	require.NoError(t, json.Unmarshal(eventDataMsg[0], &recivedMsgType))
-	require.Equal(t, "EVENT", recivedMsgType)
-	var subscriptionID messages.SubscriptionID
-	require.NoError(t, json.Unmarshal(eventDataMsg[1], &subscriptionID))
-	var resultEvent event.Event
-	require.NoError(t, json.Unmarshal(eventDataMsg[2], &resultEvent))
-	require.NoError(t, event.VerifyEvent(resultEvent), "verifying validity of recived event")
-	return subscriptionID, resultEvent, nil
+	return event.Event{}, false
 }
 
-func CloseSubscription(ctx context.Context, t *testing.T, subID messages.SubscriptionID, conn *websocket.Conn) {
+func CloseSubscription(ctx context.Context, t *testing.T, subID messages.SubscriptionID, conn MsgWriter) {
 	bytes, err := json.Marshal([]interface{}{"CLOSE", subID})
 	require.NoError(t, err)
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, bytes))

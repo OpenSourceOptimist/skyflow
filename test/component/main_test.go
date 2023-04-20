@@ -84,7 +84,8 @@ func TestMain(m *testing.M) {
 	}
 	err = pool.Retry(func() error {
 		t := ErrTestingT{}
-		_, _ = help.NewSocket(ctx, &t)
+		_, _, closer := help.NewSocket(ctx, &t)
+		closer()
 		return t.err
 	})
 	if err != nil {
