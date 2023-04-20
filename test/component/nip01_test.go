@@ -192,6 +192,8 @@ func TestNIP01Filters(t *testing.T) {
 			defer closer()
 			for _, e := range tc.allEvents {
 				help.Publish(ctx, t, e, conn)
+				_, found := help.GetEvent(ctx, t, e.ID, time.Second)
+				require.True(t, found, "event in setup not found after publishing it")
 			}
 			expectedRecivedEventsIDs := make([]event.ID, len(tc.recivedEventsAtIndices))
 			for i, index := range tc.recivedEventsAtIndices {
@@ -232,7 +234,7 @@ func TestNIP01GetEventsAfterInitialSync(t *testing.T) {
 	defer closer1()
 	initialPublishedEvent := help.Event(t, help.EventOptions{PrivKey: priv, Content: "hello world"})
 	help.Publish(ctx, t, initialPublishedEvent, conn1)
-	_, found := help.GetEvent(ctx, t, conn1, initialPublishedEvent.ID, time.Second)
+	_, found := help.GetEvent(ctx, t, initialPublishedEvent.ID, time.Second)
 	require.True(t, found)
 
 	conn2, closer2 := help.NewSocket(ctx, t)
@@ -249,7 +251,7 @@ func TestNIP01GetEventsAfterInitialSync(t *testing.T) {
 
 	secondPublishedEvent := help.Event(t, help.EventOptions{PrivKey: priv, Content: "hello again"})
 	help.Publish(ctx, t, secondPublishedEvent, conn1)
-	_, found = help.GetEvent(ctx, t, conn1, secondPublishedEvent.ID, time.Second)
+	_, found = help.GetEvent(ctx, t, secondPublishedEvent.ID, time.Second)
 	require.True(t, found)
 
 	select {

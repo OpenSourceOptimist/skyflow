@@ -83,7 +83,9 @@ func RequestSub(ctx context.Context, t *testing.T, conn *websocket.Conn, filters
 	return typedSubID, func() { CloseSubscription(ctx, t, typedSubID, conn) }
 }
 
-func GetEvent(ctx context.Context, t *testing.T, conn *websocket.Conn, id event.ID, timeout time.Duration) (event.Event, bool) {
+func GetEvent(ctx context.Context, t *testing.T, id event.ID, timeout time.Duration) (event.Event, bool) {
+	conn, closer := NewSocket(ctx, t)
+	defer closer()
 	subID, _ := RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{id}})
 	select {
 	case e := <-ListenForEventsOnSub(ctx, t, conn, subID):
@@ -101,17 +103,14 @@ func ListenForEventsOnSub(
 		for {
 			id, e, err := ReadEvent(ctx, t, conn)
 			if err != nil {
-				close(events)
 				return
 			}
 			if id != sub {
 				continue
 			}
-			select {
-			case events <- e:
-			case <-ctx.Done():
-				return
-			}
+			go func(ev event.Event) {
+				events <- ev
+			}(e)
 		}
 	}()
 	return events
