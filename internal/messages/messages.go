@@ -1,15 +1,12 @@
 package messages
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"nhooyr.io/websocket"
 )
 
 type SubscriptionID string
@@ -121,9 +118,6 @@ func EventFilter(filter Filter) primitive.M {
 	return query
 }
 
-type MessageReader interface {
-	Read(ctx context.Context) (websocket.MessageType, []byte, error)
-}
 type MessageType string
 
 const (
@@ -169,10 +163,7 @@ func errorMsgf(format string, a ...any) WebsocketMessage {
 	return WebsocketMessage{Err: fmt.Errorf(format, a...)}
 }
 
-func parseWebsocketMsg(ctx context.Context, socketMsgType websocket.MessageType, data []byte) WebsocketMessage {
-	if socketMsgType != websocket.MessageText {
-		return errorMsgf("unexpected message type: %d", socketMsgType)
-	}
+func ParseWebsocketMsg(data []byte) WebsocketMessage {
 	var message []json.RawMessage
 	err := json.Unmarshal(data, &message)
 	if err != nil {
@@ -235,42 +226,4 @@ func parseWebsocketMsg(ctx context.Context, socketMsgType websocket.MessageType,
 	default:
 		return errorMsgf("unknown msg type: %s", msgType)
 	}
-}
-
-func ListenForMessages(ctx context.Context, r MessageReader, l DebugLogger) <-chan WebsocketMessage {
-	result := make(chan WebsocketMessage)
-	go func() {
-		for {
-			err := ctx.Err()
-			if err != nil {
-				return
-			}
-			// You must always read from the
-			// connection. Otherwise control frames will
-			// not be handled. See Reader and CloseRead
-			socketMsgType, data, err := r.Read(ctx)
-			if err != nil {
-				if strings.Contains(err.Error(), "WebSocket closed") {
-					return
-				}
-				if strings.Contains(err.Error(), "connection reset by peer") {
-					return
-				}
-				if strings.Contains(err.Error(), "StatusGoingAway") {
-					return
-				}
-				if strings.Contains(err.Error(), "EOF") {
-					return
-				}
-				go func() {
-					result <- errorMsgf("read error %w", err)
-				}()
-			} else {
-				go func(t websocket.MessageType, d []byte) {
-					result <- parseWebsocketMsg(ctx, t, d)
-				}(socketMsgType, data)
-			}
-		}
-	}()
-	return result
 }

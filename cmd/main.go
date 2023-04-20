@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,29 +64,10 @@ func main() {
 		}()
 		ctx := r.Context()
 		subscriptionsAssosiatedWithRequest := make([]messages.SubscriptionUUID, 0)
-		websocketMessages := messages.ListenForMessages(ctx, conn, l)
-		for {
+		rawWebsocketMessages := websocketMessages(ctx, conn, l)
+		parsedWebSocketMessages := slice.MapChan(ctx, rawWebsocketMessages, messages.ParseWebsocketMsg)
+		for msg := range parsedWebSocketMessages {
 			l.IncrementSession()
-			var msg messages.WebsocketMessage
-			select {
-			case msg = <-websocketMessages:
-			case <-ctx.Done():
-				l.Info("ctx cancelled, closing websocket")
-				conn.Close(websocket.StatusNormalClosure, "session cancelled by user")
-				for _, subscriptionID := range subscriptionsAssosiatedWithRequest {
-					subscriptionHandler, ok := globalOngoingSubscriptions.Load(subscriptionID)
-					if !ok {
-						continue
-					}
-					subscriptionHandler.Cancel()
-					globalOngoingSubscriptions.Delete(subscriptionID)
-					err = subscriptions.DeleteOne(ctx, subscriptionHandler.Details)
-					if err != nil {
-						l.Error("failed to delete subscription", "error", err)
-					}
-				}
-				return //nolint:govet
-			}
 			if msg.Err != nil {
 				l.Error("error reading websocket message", "error", msg.Err)
 				continue
@@ -118,7 +100,7 @@ func main() {
 				}
 				l.Debug("subscription over websocket", "subscription", subscription)
 				subscriptionCtx, cancelSubscription := context.WithCancel(ctx) //nolint:govet
-				defer cancelSubscription()
+				defer cancelSubscription()                                     //nolint:staticcheck
 				if _, ok := globalOngoingSubscriptions.Load(subscription.UUID()); ok {
 					continue
 				}
@@ -167,6 +149,20 @@ func main() {
 				}
 				subscriptionHandle.Cancel()
 				globalOngoingSubscriptions.Delete(subscriptionToClose)
+			}
+		}
+		l.Info("closing websocket")
+		conn.Close(websocket.StatusNormalClosure, "session cancelled")
+		for _, subscriptionID := range subscriptionsAssosiatedWithRequest {
+			subscriptionHandler, ok := globalOngoingSubscriptions.Load(subscriptionID)
+			if !ok {
+				continue
+			}
+			subscriptionHandler.Cancel()
+			globalOngoingSubscriptions.Delete(subscriptionID)
+			err = subscriptions.DeleteOne(ctx, subscriptionHandler.Details)
+			if err != nil {
+				l.Error("failed to delete subscription", "error", err)
 			}
 		}
 	})
@@ -219,4 +215,46 @@ func (m *SyncMap[K, T]) Load(key K) (T, bool) {
 
 func (m *SyncMap[K, T]) Store(key K, value T) {
 	m.syncMap.Store(key, value)
+}
+
+func websocketMessages(ctx context.Context, r *websocket.Conn, l *log.Logger) <-chan []byte {
+	result := make(chan []byte)
+	go func() {
+		var wg sync.WaitGroup
+		defer func() {
+			wg.Wait()
+			close(result)
+		}()
+		for {
+			err := ctx.Err()
+			if err != nil {
+				return
+			}
+			socketMsgType, data, err := r.Read(ctx)
+			if err != nil {
+				if strings.Contains(err.Error(), "WebSocket closed") {
+					return
+				}
+				if strings.Contains(err.Error(), "connection reset by peer") {
+					return
+				}
+				if strings.Contains(err.Error(), "StatusGoingAway") {
+					return
+				}
+				if strings.Contains(err.Error(), "EOF") {
+					return
+				}
+			} else if socketMsgType == websocket.MessageText {
+				// You must always read from the
+				// connection. Otherwise control frames will
+				// not be handled. See Reader and CloseRead
+				wg.Add(1)
+				go func(d []byte) {
+					result <- d
+					wg.Done()
+				}(data)
+			}
+		}
+	}()
+	return result
 }
