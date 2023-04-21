@@ -3,7 +3,9 @@ package help
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,6 +41,7 @@ type MsgWriter struct {
 }
 
 func (w *MsgWriter) Write(ctx context.Context, typ websocket.MessageType, p []byte) error {
+	//fmt.Println("write:" + string(p))
 	return w.conn.Write(ctx, typ, p)
 }
 
@@ -58,14 +61,22 @@ func NewSocket(ctx context.Context, t require.TestingT, opts ...SocketOpts) (Msg
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode, "handshake status")
 	read := make(chan MsgRead)
 	go func() {
+		var wg sync.WaitGroup
+		defer func() {
+			wg.Wait()
+			close(read)
+		}()
 		for {
 			msgType, msg, err := conn.Read(ctx)
 			if err != nil {
 				return
 			}
+			//fmt.Println("read:" + string(msg))
 			require.Equal(t, websocket.MessageText, msgType)
+			wg.Add(1)
 			go func(b []byte) {
 				read <- MsgRead(b)
+				wg.Done()
 			}(msg)
 		}
 	}()
@@ -106,23 +117,61 @@ func RequestSub(ctx context.Context, t *testing.T, conn MsgWriter, filters ...me
 	return typedSubID, func() { CloseSubscription(ctx, t, typedSubID, conn) }
 }
 
-func GetEvent(ctx context.Context, t *testing.T, id event.ID, timeout time.Duration) (event.Event, bool) {
+func GetEvent(ctx context.Context, t *testing.T, id event.ID) (event.Event, bool) {
 	conn, read, closer := NewSocket(ctx, t)
 	defer closer()
 	subID, _ := RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{id}})
-	return ReadEvent(ctx, t, read, subID, timeout)
+	return ReadEvent(ctx, t, read, subID)
+}
+
+func StoredEvents(
+	t *testing.T,
+	read <-chan MsgRead,
+	sub messages.SubscriptionID,
+	timeout time.Duration) ([]event.Event, error) {
+	events := make([]event.Event, 0)
+	giveUp := time.After(timeout)
+	for {
+		var responseBytes MsgRead
+		select {
+		case responseBytes = <-read:
+		case <-giveUp:
+			return nil, fmt.Errorf("timeout")
+		}
+		var eventDataMsg []json.RawMessage
+		require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
+		var recivedMsgType string
+		require.NoError(t, json.Unmarshal(eventDataMsg[0], &recivedMsgType))
+		if recivedMsgType == "EOSE" {
+			var subscriptionID messages.SubscriptionID
+			require.NoError(t, json.Unmarshal(eventDataMsg[1], &subscriptionID))
+			if subscriptionID == sub {
+				return events, nil
+			}
+		}
+		if recivedMsgType != "EVENT" {
+			fmt.Println(string(responseBytes))
+			continue
+		}
+		require.Len(t, eventDataMsg, 3)
+		var subscriptionID messages.SubscriptionID
+		require.NoError(t, json.Unmarshal(eventDataMsg[1], &subscriptionID))
+		var resultEvent event.Event
+		require.NoError(t, json.Unmarshal(eventDataMsg[2], &resultEvent))
+		require.NoError(t, event.VerifyEvent(resultEvent), "verifying validity of recived event")
+		events = append(events, resultEvent)
+	}
 }
 
 func ListenForEventsOnSub(
 	ctx context.Context,
 	t *testing.T,
 	read <-chan MsgRead,
-	sub messages.SubscriptionID,
-	timeout time.Duration) chan event.Event {
+	sub messages.SubscriptionID) chan event.Event {
 	result := make(chan event.Event)
 	go func() {
 		for {
-			e, found := ReadEvent(ctx, t, read, sub, timeout)
+			e, found := ReadEvent(ctx, t, read, sub)
 			if !found {
 				close(result)
 				return
@@ -133,14 +182,8 @@ func ListenForEventsOnSub(
 	return result
 }
 
-func ReadEvent(ctx context.Context, t *testing.T, read <-chan MsgRead, sub messages.SubscriptionID, timeout time.Duration) (event.Event, bool) {
-	giveUp := time.After(timeout)
+func ReadEvent(ctx context.Context, t *testing.T, read <-chan MsgRead, sub messages.SubscriptionID) (event.Event, bool) {
 	for responseBytes := range read {
-		select {
-		case <-giveUp:
-			return event.Event{}, false
-		default:
-		}
 		var eventDataMsg []json.RawMessage
 		require.NoError(t, json.Unmarshal(responseBytes, &eventDataMsg))
 		var recivedMsgType string

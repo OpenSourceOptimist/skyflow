@@ -62,7 +62,7 @@ func TestNIP01Closing(t *testing.T) {
 	help.Publish(ctx, t, validEvent, conn)
 	subID2, sub2Closer := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{validEvent.ID}})
 	defer sub2Closer()
-	e, found := help.ReadEvent(ctx, t, read, subID2, time.Second)
+	e, found := help.ReadEvent(ctx, t, read, subID2)
 	require.True(t, found)
 	require.Equal(t, e.ID, e.ID)
 }
@@ -180,13 +180,13 @@ func TestNIP01Filters(t *testing.T) {
 	for _, tc := range testcases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			conn, read, closer := help.NewSocket(ctx, t)
 			defer closer()
 			for _, e := range tc.allEvents {
 				help.Publish(ctx, t, e, conn)
-				_, found := help.GetEvent(ctx, t, e.ID, time.Second)
+				_, found := help.GetEvent(ctx, t, e.ID)
 				require.True(t, found, "event in setup not found after publishing it")
 			}
 			expectedRecivedEventsIDs := make([]event.ID, len(tc.recivedEventsAtIndices))
@@ -206,7 +206,7 @@ func TestNIP01Filters(t *testing.T) {
 			sub, subCloser := help.RequestSub(ctx, t, conn, modifiedFilters...)
 			defer subCloser()
 			reciviedEvents := slice.ReadSlice(
-				help.ListenForEventsOnSub(ctx, t, read, sub, time.Second),
+				help.ListenForEventsOnSub(ctx, t, read, sub),
 				len(expectedRecivedEventsIDs),
 				time.Second,
 			)
@@ -223,34 +223,36 @@ func TestNIP01Filters(t *testing.T) {
 
 func TestNIP01GetEventsAfterInitialSync(t *testing.T) {
 	priv, pub := help.NewKeyPair(t)
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	conn1, _, closer1 := help.NewSocket(ctx, t)
 	defer closer1()
 	initialPublishedEvent := help.Event(t, help.EventOptions{PrivKey: priv, Content: "hello world"})
 	help.Publish(ctx, t, initialPublishedEvent, conn1)
-	_, found := help.GetEvent(ctx, t, initialPublishedEvent.ID, time.Second)
+	_, found := help.GetEvent(ctx, t, initialPublishedEvent.ID)
 	require.True(t, found)
 
 	conn2, read2, closer2 := help.NewSocket(ctx, t)
 	defer closer2()
 	subID, subCloser := help.RequestSub(ctx, t, conn2, messages.Filter{Authors: []event.PubKey{pub}})
 	defer subCloser()
-	initialRecivedEvent, found := help.ReadEvent(ctx, t, read2, subID, time.Second)
+	initialRecivedEvent, found := help.ReadEvent(ctx, t, read2, subID)
 	require.True(t, found)
 	require.Equal(t, initialPublishedEvent, initialRecivedEvent)
 
 	secondPublishedEvent := help.Event(t, help.EventOptions{PrivKey: priv, Content: "hello again"})
 	help.Publish(ctx, t, secondPublishedEvent, conn1)
-	_, found = help.GetEvent(ctx, t, secondPublishedEvent.ID, time.Second)
+	_, found = help.GetEvent(ctx, t, secondPublishedEvent.ID)
 	require.True(t, found)
 
-	secondRecivedEvent, found := help.ReadEvent(ctx, t, read2, subID, time.Second)
+	secondRecivedEvent, found := help.ReadEvent(ctx, t, read2, subID)
 	require.True(t, found)
 	require.Equal(t, secondPublishedEvent, secondRecivedEvent)
 }
 
 func TestNIP01VerificationEventID(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	conn, read, closer := help.NewSocket(ctx, t)
 	defer closer()
 
@@ -262,13 +264,14 @@ func TestNIP01VerificationEventID(t *testing.T) {
 
 	subID, subCloser := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{badEvent.ID, olderevent.ID}})
 	defer subCloser()
-	foundEvent, found := help.ReadEvent(ctx, t, read, subID, time.Second)
+	foundEvent, found := help.ReadEvent(ctx, t, read, subID)
 	require.True(t, found)
 	require.Equal(t, olderevent.ID, foundEvent.ID)
 }
 
 func TestNIP01VerificationSignature(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	conn, read, closer := help.NewSocket(ctx, t)
 	defer closer()
 
@@ -280,13 +283,14 @@ func TestNIP01VerificationSignature(t *testing.T) {
 
 	subID, subCloser := help.RequestSub(ctx, t, conn, messages.Filter{IDs: []event.ID{badEvent.ID, olderevent.ID}})
 	defer subCloser()
-	foundEvent, found := help.ReadEvent(ctx, t, read, subID, time.Second)
+	foundEvent, found := help.ReadEvent(ctx, t, read, subID)
 	require.True(t, found)
 	require.Equal(t, olderevent.ID, foundEvent.ID)
 }
 
 func TestNIP01DuplicateSubscriptionIDsBetweenSessions(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	subID := uuid.NewString()
 	eventSent := help.Event(t)
 	bytes, err := json.Marshal([]interface{}{"REQ", subID, messages.Filter{IDs: []event.ID{eventSent.ID}}})
@@ -304,17 +308,18 @@ func TestNIP01DuplicateSubscriptionIDsBetweenSessions(t *testing.T) {
 	defer closer3()
 	help.Publish(ctx, t, eventSent, conn3)
 
-	e, found := help.ReadEvent(ctx, t, read1, messages.SubscriptionID(subID), time.Second)
+	e, found := help.ReadEvent(ctx, t, read1, messages.SubscriptionID(subID))
 	require.True(t, found)
 	require.Equal(t, eventSent.ID, e.ID)
 
-	e, found = help.ReadEvent(ctx, t, read2, messages.SubscriptionID(subID), time.Second)
+	e, found = help.ReadEvent(ctx, t, read2, messages.SubscriptionID(subID))
 	require.True(t, found)
 	require.Equal(t, eventSent.ID, e.ID)
 }
 
 func TestNIP01DuplicateSubscriptionIDsBetweenSessionsClosing(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	subID := messages.SubscriptionID(uuid.NewString())
 	eventSent := help.Event(t)
 	bytes, err := json.Marshal([]interface{}{"REQ", subID, messages.Filter{IDs: []event.ID{eventSent.ID}}})
@@ -334,7 +339,20 @@ func TestNIP01DuplicateSubscriptionIDsBetweenSessionsClosing(t *testing.T) {
 	defer closer3()
 	help.Publish(ctx, t, eventSent, conn3)
 
-	e, found := help.ReadEvent(ctx, t, read1, subID, time.Second)
+	e, found := help.ReadEvent(ctx, t, read1, subID)
 	require.True(t, found)
 	require.Equal(t, eventSent.ID, e.ID)
+}
+
+func TestNIP01SendEOSE(t *testing.T) {
+	ctx, ctxCloser := context.WithTimeout(context.Background(), time.Second)
+	defer ctxCloser()
+	conn, read, connCloser := help.NewSocket(ctx, t)
+	defer connCloser()
+	subWithouthMatches, subCloser := help.RequestSub(ctx, t, conn,
+		messages.Filter{IDs: []event.ID{event.ID(uuid.NewString())}},
+	)
+	defer subCloser()
+	_, err := help.StoredEvents(t, read, subWithouthMatches, time.Second)
+	require.NoError(t, err)
 }

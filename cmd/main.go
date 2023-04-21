@@ -129,10 +129,17 @@ func main() {
 							},
 						)
 					})
-				eventsInDatabase := slice.Merge(subscriptionCtx, eventsPerFilter...)
-				events := slice.MapChan(subscriptionCtx, eventsInDatabase, event.UnStructure)
-				subscriptionEvents := slice.ChanConcatenate(events, newEvents)
-				go writeFoundEventsToConnection(subscriptionCtx, subscription.ID, subscriptionEvents, conn)
+				dbEventsStructured := slice.Merge(subscriptionCtx, eventsPerFilter...)
+				dbEvents := slice.MapChan(subscriptionCtx, dbEventsStructured, event.UnStructure)
+				dbEventsAsMessages := slice.MapChanSkipErrors(
+					ctx, dbEvents, eventToWebsocketMsg(subscription.ID))
+				newEventsAsMessages := slice.MapChanSkipErrors(
+					ctx, newEvents, eventToWebsocketMsg(subscription.ID))
+				subscriptionEvents := slice.ChanConcatenate(
+					dbEventsAsMessages,
+					slice.AsClosedChan(eoseWebsocketMsg(subscription.ID)),
+					newEventsAsMessages)
+				go writeToConnection(subscriptionCtx, subscriptionEvents, conn, l)
 			case messages.CLOSE:
 				subscriptionToClose, ok := msg.AsCLOSE(session)
 				if !ok {
@@ -169,19 +176,35 @@ func main() {
 	logrus.Info("server stopping: " + http.ListenAndServe(":80", handler).Error())
 }
 
-func writeFoundEventsToConnection(
-	ctx context.Context, sub messages.SubscriptionID, foundEvents <-chan event.Event, connection *websocket.Conn) {
+func eoseWebsocketMsg(sub messages.SubscriptionID) []byte {
+	bytes, err := json.Marshal([]any{"EOSE", sub})
+	if err != nil {
+		panic("failed to marshal EOSE message")
+	}
+	return bytes
+}
+
+func writeToConnection(ctx context.Context, msgChan <-chan []byte, connection *websocket.Conn, l *log.Logger) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case e := <-foundEvents:
-			eventMsg, err := json.Marshal([]any{"EVENT", sub, e})
+		case eventMsg := <-msgChan:
+			err := connection.Write(ctx, websocket.MessageText, eventMsg)
 			if err != nil {
-				continue
+				l.Error("write error", "error", err)
 			}
-			_ = connection.Write(ctx, websocket.MessageText, eventMsg)
 		}
+	}
+}
+
+func eventToWebsocketMsg(sub messages.SubscriptionID) func(event.Event) ([]byte, error) {
+	return func(e event.Event) ([]byte, error) {
+		eventMsg, err := json.Marshal([]any{"EVENT", sub, e})
+		if err != nil {
+			return nil, err
+		}
+		return eventMsg, nil
 	}
 }
 
@@ -232,6 +255,7 @@ func websocketMessages(ctx context.Context, r *websocket.Conn, l *log.Logger) <-
 			}
 			socketMsgType, data, err := r.Read(ctx)
 			if err != nil {
+				l.Debug("read error", "error", err)
 				if strings.Contains(err.Error(), "WebSocket closed") {
 					return
 				}
