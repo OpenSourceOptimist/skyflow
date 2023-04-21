@@ -139,7 +139,7 @@ func main() {
 					dbEventsAsMessages,
 					slice.AsClosedChan(eoseWebsocketMsg(subscription.ID)),
 					newEventsAsMessages)
-				go writeToConnection(subscriptionCtx, subscriptionEvents, conn)
+				go writeToConnection(subscriptionCtx, subscriptionEvents, conn, l)
 			case messages.CLOSE:
 				subscriptionToClose, ok := msg.AsCLOSE(session)
 				if !ok {
@@ -184,13 +184,16 @@ func eoseWebsocketMsg(sub messages.SubscriptionID) []byte {
 	return bytes
 }
 
-func writeToConnection(ctx context.Context, msgChan <-chan []byte, connection *websocket.Conn) {
+func writeToConnection(ctx context.Context, msgChan <-chan []byte, connection *websocket.Conn, l *log.Logger) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case eventMsg := <-msgChan:
-			_ = connection.Write(ctx, websocket.MessageText, eventMsg)
+			err := connection.Write(ctx, websocket.MessageText, eventMsg)
+			if err != nil {
+				l.Error("write error", "error", err)
+			}
 		}
 	}
 }
