@@ -1,6 +1,6 @@
 module github.com/OpenSourceOptimist/skyflow
 
-go 1.19
+go 1.20
 
 require (
 	github.com/btcsuite/btcd/btcec/v2 v2.2.0
