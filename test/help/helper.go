@@ -41,6 +41,7 @@ type MsgWriter struct {
 }
 
 func (w *MsgWriter) Write(ctx context.Context, typ websocket.MessageType, p []byte) error {
+	//fmt.Println("write:" + string(p))
 	return w.conn.Write(ctx, typ, p)
 }
 
@@ -70,6 +71,7 @@ func NewSocket(ctx context.Context, t require.TestingT, opts ...SocketOpts) (Msg
 			if err != nil {
 				return
 			}
+			//fmt.Println("read:" + string(msg))
 			require.Equal(t, websocket.MessageText, msgType)
 			wg.Add(1)
 			go func(b []byte) {
