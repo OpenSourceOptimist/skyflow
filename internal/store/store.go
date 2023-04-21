@@ -63,11 +63,11 @@ func (s *Store[T]) DeleteOne(ctx context.Context, t T) error {
 func asChannel[T any](ctx context.Context, cursor *mongo.Cursor) <-chan T {
 	res := make(chan T)
 	go func() {
+		defer close(res)
 		for cursor.Next(ctx) && cursor.Err() == nil {
 			var t T
 			err := cursor.Decode(&t)
 			if err != nil {
-				close(res)
 				return
 			}
 			select {
@@ -76,7 +76,6 @@ func asChannel[T any](ctx context.Context, cursor *mongo.Cursor) <-chan T {
 				return
 			}
 		}
-		close(res)
 	}()
 	return res
 }
