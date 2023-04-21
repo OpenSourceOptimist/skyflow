@@ -252,6 +252,7 @@ func websocketMessages(ctx context.Context, r *websocket.Conn, l *log.Logger) <-
 			}
 			socketMsgType, data, err := r.Read(ctx)
 			if err != nil {
+				l.Debug("read error", "error", err)
 				if strings.Contains(err.Error(), "WebSocket closed") {
 					return
 				}
