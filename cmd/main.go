@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
-	"github.com/OpenSourceOptimist/skyflow/internal/log"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"github.com/OpenSourceOptimist/skyflow/internal/store"
@@ -50,55 +49,44 @@ func main() {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		session := messages.SessionID(uuid.NewString())
-		l := &log.Logger{Session: slice.Prefix(string(session), 5)}
-		l.Debug("handling new request")
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			l.Error("error setting up websocket", "error", err)
 			return
 		}
 		defer func() {
-			l.Debug("websocket closed")
 			conn.Close(websocket.StatusInternalError, "thanks, bye")
 		}()
 		ctx := r.Context()
 		subscriptionsAssosiatedWithRequest := make([]messages.SubscriptionUUID, 0)
-		rawWebsocketMessages := websocketMessages(ctx, conn, l)
+		rawWebsocketMessages := websocketMessages(ctx, conn)
 		parsedWebSocketMessages := slice.MapChan(ctx, rawWebsocketMessages, messages.ParseWebsocketMsg)
 		for msg := range parsedWebSocketMessages {
-			l.IncrementSession()
 			if msg.Err != nil {
-				l.Error("error reading websocket message", "error", msg.Err)
 				continue
 			}
 			switch msg.MsgType {
 			case messages.EVENT:
 				e, ok := msg.AsEvent()
 				if !ok {
-					l.Error("not event", "msg", msg)
 					continue
 				}
-				l.Debug("event over websocket", "eID", e.ID)
 				err = eventDatabase.InsertOne(ctx, event.Structure(e))
 				if err != nil {
-					l.Error("failed to insert event in DB", "error", err)
+					logrus.Error("mongo error on inserting new event: " + err.Error())
 				}
 				for subscription := range subscriptions.Find(ctx, messages.SubscriptionFilter(e)) {
 					handle, ok := globalOngoingSubscriptions.Load(subscription.UUID())
 					if !ok {
-						l.Error("subscription not in global map", "subID", subscription.ID)
 						continue
 					}
-					l.Debug("following up", "subID", subscription.ID, "eID", e.ID)
 					slice.AsyncWrite(handle.Ctx, handle.NewEvents, e)
 				}
 			case messages.REQ:
 				subscription, ok := msg.AsREQ(session)
 				if !ok {
-					l.Error("not REQ", "msg", msg)
+					continue
 				}
-				l.Debug("subscription over websocket", "subscription", subscription)
 				subscriptionCtx, cancelSubscription := context.WithCancel(ctx) //nolint:govet
 				defer cancelSubscription()                                     //nolint:staticcheck
 				if _, ok := globalOngoingSubscriptions.Load(subscription.UUID()); ok {
@@ -106,7 +94,7 @@ func main() {
 				}
 				err = subscriptions.InsertOne(ctx, subscription)
 				if err != nil {
-					l.Error("failed to insert subscription in DB", "error", err)
+					logrus.Error("mongo error on inserting supscription: " + err.Error())
 				}
 				newEvents := make(chan event.Event)
 				globalOngoingSubscriptions.Store(
@@ -139,26 +127,24 @@ func main() {
 					dbEventsAsMessages,
 					slice.AsClosedChan(eoseWebsocketMsg(subscription.ID)),
 					newEventsAsMessages)
-				go writeToConnection(subscriptionCtx, subscriptionEvents, conn, l)
+				go writeToConnection(subscriptionCtx, subscriptionEvents, conn)
 			case messages.CLOSE:
 				subscriptionToClose, ok := msg.AsCLOSE(session)
 				if !ok {
 					continue
 				}
-				l.Debug("recived close over websocket", "subID", subscriptionToClose)
 				subscriptionHandle, ok := globalOngoingSubscriptions.Load(subscriptionToClose)
 				if !ok {
 					continue
 				}
 				err = subscriptions.DeleteOne(ctx, subscriptionHandle.Details)
 				if err != nil {
-					l.Error("failed to delete subscription", "error", err)
+					logrus.Error("mongo delete failed: " + err.Error())
 				}
 				subscriptionHandle.Cancel()
 				globalOngoingSubscriptions.Delete(subscriptionToClose)
 			}
 		}
-		l.Info("closing websocket")
 		conn.Close(websocket.StatusNormalClosure, "session cancelled")
 		for _, subscriptionID := range subscriptionsAssosiatedWithRequest {
 			subscriptionHandler, ok := globalOngoingSubscriptions.Load(subscriptionID)
@@ -169,7 +155,7 @@ func main() {
 			globalOngoingSubscriptions.Delete(subscriptionID)
 			err = subscriptions.DeleteOne(ctx, subscriptionHandler.Details)
 			if err != nil {
-				l.Error("failed to delete subscription", "error", err)
+				logrus.Error("mongo delete failed: " + err.Error())
 			}
 		}
 	})
@@ -184,7 +170,7 @@ func eoseWebsocketMsg(sub messages.SubscriptionID) []byte {
 	return bytes
 }
 
-func writeToConnection(ctx context.Context, msgChan <-chan []byte, connection *websocket.Conn, l *log.Logger) {
+func writeToConnection(ctx context.Context, msgChan <-chan []byte, connection *websocket.Conn) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -192,7 +178,7 @@ func writeToConnection(ctx context.Context, msgChan <-chan []byte, connection *w
 		case eventMsg := <-msgChan:
 			err := connection.Write(ctx, websocket.MessageText, eventMsg)
 			if err != nil {
-				l.Error("write error", "error", err)
+				logrus.Error("websocket write error: " + err.Error())
 			}
 		}
 	}
@@ -240,7 +226,7 @@ func (m *SyncMap[K, T]) Store(key K, value T) {
 	m.syncMap.Store(key, value)
 }
 
-func websocketMessages(ctx context.Context, r *websocket.Conn, l *log.Logger) <-chan []byte {
+func websocketMessages(ctx context.Context, r *websocket.Conn) <-chan []byte {
 	result := make(chan []byte)
 	go func() {
 		var wg sync.WaitGroup
@@ -255,7 +241,6 @@ func websocketMessages(ctx context.Context, r *websocket.Conn, l *log.Logger) <-
 			}
 			socketMsgType, data, err := r.Read(ctx)
 			if err != nil {
-				l.Debug("read error", "error", err)
 				if strings.Contains(err.Error(), "WebSocket closed") {
 					return
 				}
