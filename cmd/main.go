@@ -18,6 +18,12 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/trace"
+
+	// "go.opentelemetry.io/otel/trace"
+
 	"nhooyr.io/websocket"
 )
 
@@ -26,6 +32,9 @@ func main() {
 	logrus.SetOutput(os.Stdout)
 	logrus.Info("Starting Skyflow")
 	mongoUri := os.Getenv("MONGODB_URI")
+	traceProvider := trace.NewTracerProvider()
+	defer traceProvider.Shutdown(context.Background())
+	otel.SetTracerProvider(traceProvider)
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoUri))
 	if err != nil {
 		logrus.Fatal("Mongo connection failed")
@@ -48,7 +57,11 @@ func main() {
 	globalOngoingSubscriptions := NewSyncMap[messages.SubscriptionUUID, SubscriptionHandle]()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		ctx, span := otel.Tracer("skyflow").Start(ctx, "session")
+		defer span.End()
 		session := messages.SessionID(uuid.NewString())
+		span.SetAttributes(attribute.String("sessionId", string(session)))
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -57,7 +70,6 @@ func main() {
 		defer func() {
 			conn.Close(websocket.StatusInternalError, "thanks, bye")
 		}()
-		ctx := r.Context()
 		subscriptionsAssosiatedWithRequest := make([]messages.SubscriptionUUID, 0)
 		rawWebsocketMessages := websocketMessages(ctx, conn)
 		parsedWebSocketMessages := slice.MapChan(ctx, rawWebsocketMessages, messages.ParseWebsocketMsg)
