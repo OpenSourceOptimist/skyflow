@@ -60,6 +60,7 @@ func main() {
 		ctx := r.Context()
 		ctx, span := otel.Tracer("skyflow").Start(ctx, "session")
 		defer span.End()
+		logrus.Info("new connection: " + span.SpanContext().TraceID().String())
 		session := messages.SessionID(uuid.NewString())
 		span.SetAttributes(attribute.String("sessionId", string(session)))
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
