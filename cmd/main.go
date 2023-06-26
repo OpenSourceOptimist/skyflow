@@ -24,6 +24,8 @@ import (
 
 	// "go.opentelemetry.io/otel/trace"
 
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"nhooyr.io/websocket"
 )
 
@@ -32,7 +34,20 @@ func main() {
 	logrus.SetOutput(os.Stdout)
 	logrus.Info("Starting Skyflow")
 	mongoUri := os.Getenv("MONGODB_URI")
-	traceProvider := trace.NewTracerProvider()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	exporter, err := otlptrace.New(ctx,
+		otlptracehttp.NewClient(
+			otlptracehttp.WithEndpoint("tempo:4318"),
+			otlptracehttp.WithInsecure(),
+		),
+	)
+	if err != nil {
+		logrus.Info("no tracing, you are flying blind")
+	}
+	traceProvider := trace.NewTracerProvider(
+		trace.WithBatcher(exporter),
+	)
 	defer traceProvider.Shutdown(context.Background())
 	otel.SetTracerProvider(traceProvider)
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoUri))
@@ -47,7 +62,6 @@ func main() {
 	subscriptions := &store.Store[messages.Subscription]{
 		Col: client.Database("skyflow").Collection("subscriptions"),
 	}
-	ctx := context.Background()
 	for err != nil {
 		err := client.Ping(ctx, nil)
 		logrus.Error("mongo ping", "error", err.Error())
