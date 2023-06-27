@@ -2,13 +2,14 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"github.com/OpenSourceOptimist/skyflow/internal/store"
-	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.opentelemetry.io/otel"
 )
 
 type ConvertableToEvent interface {
@@ -34,17 +35,20 @@ func HandleEventMessage(
 	subscriptionsDB DBSubscriptionFinder,
 	ongoingSubscriptions SubcriptionHandleLoader,
 ) {
+	ctx, span := otel.Tracer("skyflow").Start(ctx, "HandleEventMessage")
 	e, ok := msg.AsEvent()
 	if !ok {
+		span.RecordError(fmt.Errorf("message not convertible to event"))
 		return
 	}
 	err := eventsDB.InsertOne(ctx, event.Structure(e))
 	if err != nil {
-		logrus.Error("mongo error on inserting new event: " + err.Error())
+		span.RecordError(fmt.Errorf("mongo error on inserting new event: %w", err))
 	}
 	for subscription := range subscriptionsDB.Find(ctx, messages.SubscriptionFilter(e)) {
 		handle, ok := ongoingSubscriptions.Load(subscription.UUID())
 		if !ok {
+			span.RecordError(fmt.Errorf("subscription in DB but no handler found"))
 			// Possibly we should remove the subsction
 			// from the DB here. Not sure.
 			continue
