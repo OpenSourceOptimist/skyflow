@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
+	"github.com/OpenSourceOptimist/skyflow/internal/handlers"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"github.com/OpenSourceOptimist/skyflow/internal/store"
@@ -48,7 +49,7 @@ func main() {
 	traceProvider := trace.NewTracerProvider(
 		trace.WithBatcher(exporter),
 	)
-	defer traceProvider.Shutdown(context.Background())
+	defer func() { _ = traceProvider.Shutdown(context.Background()) }()
 	otel.SetTracerProvider(traceProvider)
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoUri))
 	if err != nil {
@@ -68,7 +69,7 @@ func main() {
 		time.Sleep(time.Second)
 	}
 
-	globalOngoingSubscriptions := NewSyncMap[messages.SubscriptionUUID, SubscriptionHandle]()
+	globalOngoingSubscriptions := NewSyncMap[messages.SubscriptionUUID, messages.SubscriptionHandle]()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -94,21 +95,9 @@ func main() {
 			}
 			switch msg.MsgType {
 			case messages.EVENT:
-				e, ok := msg.AsEvent()
-				if !ok {
-					continue
-				}
-				err = eventDatabase.InsertOne(ctx, event.Structure(e))
-				if err != nil {
-					logrus.Error("mongo error on inserting new event: " + err.Error())
-				}
-				for subscription := range subscriptions.Find(ctx, messages.SubscriptionFilter(e)) {
-					handle, ok := globalOngoingSubscriptions.Load(subscription.UUID())
-					if !ok {
-						continue
-					}
-					slice.AsyncWrite(handle.Ctx, handle.NewEvents, e)
-				}
+				handlers.HandleEventMessage(
+					ctx, msg, eventDatabase, subscriptions, &globalOngoingSubscriptions,
+				)
 			case messages.REQ:
 				subscription, ok := msg.AsREQ(session)
 				if !ok {
@@ -126,7 +115,7 @@ func main() {
 				newEvents := make(chan event.Event)
 				globalOngoingSubscriptions.Store(
 					subscription.UUID(),
-					SubscriptionHandle{
+					messages.SubscriptionHandle{
 						Ctx:       subscriptionCtx,
 						Cancel:    cancelSubscription,
 						NewEvents: newEvents,
@@ -219,13 +208,6 @@ func eventToWebsocketMsg(sub messages.SubscriptionID) func(event.Event) ([]byte,
 		}
 		return eventMsg, nil
 	}
-}
-
-type SubscriptionHandle struct {
-	Ctx       context.Context
-	Cancel    func()
-	NewEvents chan<- event.Event
-	Details   messages.Subscription
 }
 
 func NewSyncMap[K comparable, T any]() SyncMap[K, T] {
