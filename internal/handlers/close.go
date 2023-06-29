@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
+	"go.opentelemetry.io/otel"
 )
 
 type CloseMsg interface {
@@ -23,19 +25,24 @@ func Close(
 	msg CloseMsg,
 	subscriptionDB Deleter,
 	globalOngoingSubscriptions LoadDeleter,
-) {
+) (messages.SubscriptionUUID, bool) {
+	ctx, span := otel.Tracer("skyflow").Start(ctx, "handlers_close")
+	defer span.End()
 	subscriptionToClose, ok := msg.AsCLOSE(session)
 	if !ok {
-		return
+		span.RecordError(fmt.Errorf("msg not expected CLOSE"))
+		return messages.SubscriptionUUID(""), false
 	}
 	subscriptionHandle, ok := globalOngoingSubscriptions.Load(subscriptionToClose)
 	if !ok {
-		return
+		span.RecordError(fmt.Errorf("could not find subscription among ongoing"))
+		return messages.SubscriptionUUID(""), false
 	}
 	err := subscriptionDB.DeleteOne(ctx, subscriptionHandle.Details)
 	if err != nil {
-		return
+		span.RecordError(fmt.Errorf("subscription DB delete error: %w", err))
 	}
 	subscriptionHandle.Cancel()
 	globalOngoingSubscriptions.Delete(subscriptionToClose)
+	return subscriptionHandle.Details.UUID(), true
 }

@@ -97,7 +97,7 @@ func MapChan[T any, K any](ctx context.Context, c <-chan T, f func(T) K) <-chan 
 			case t, ok := <-c:
 				if !ok {
 					close(res)
-					return // channel closed
+					return
 				}
 				select {
 				case res <- f(t):

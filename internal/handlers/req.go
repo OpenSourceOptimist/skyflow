@@ -3,13 +3,14 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"github.com/OpenSourceOptimist/skyflow/internal/store"
-	"github.com/sirupsen/logrus"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.opentelemetry.io/otel"
 	"nhooyr.io/websocket"
 )
 
@@ -35,18 +36,22 @@ func Req(
 	subscritptionsDB OneInserter,
 	globalOngoingSubscriptions LoadStorer,
 	conn *websocket.Conn,
-) context.CancelFunc {
+) (messages.SubscriptionUUID, context.CancelFunc, bool) {
+	ctx, span := otel.Tracer("skyflow").Start(ctx, "HandleREQ")
+	defer span.End()
 	subscriptionCtx, cancelSubscription := context.WithCancel(ctx) //nolint:govet
 	subscription, ok := msg.AsREQ(session)
 	if !ok {
-		return cancelSubscription
+		span.RecordError(fmt.Errorf("msg not not REQ as expected"))
+		return messages.SubscriptionUUID(""), cancelSubscription, false
 	}
 	if _, ok := globalOngoingSubscriptions.Load(subscription.UUID()); ok {
-		return cancelSubscription
+		span.RecordError(fmt.Errorf("there is already and ongoing subscription with the same ID for this session"))
+		return messages.SubscriptionUUID(""), cancelSubscription, false
 	}
 	err := subscritptionsDB.InsertOne(ctx, subscription)
 	if err != nil {
-		logrus.Error("mongo error on inserting supscription: " + err.Error())
+		span.RecordError(fmt.Errorf("inserting supscription into DB: %w", err))
 	}
 	newEvents := make(chan event.Event)
 	globalOngoingSubscriptions.Store(
@@ -77,20 +82,25 @@ func Req(
 		ctx, newEvents, eventToWebsocketMsg(subscription.ID))
 	subscriptionEvents := slice.ChanConcatenate(
 		dbEventsAsMessages,
-		slice.AsClosedChan(eoseWebsocketMsg(subscription.ID)),
-		newEventsAsMessages)
+		slice.AsClosedChan(eoseWebsocketMsg(subscriptionCtx, subscription.ID)),
+		newEventsAsMessages,
+	)
 	go writeToConnection(subscriptionCtx, subscriptionEvents, conn)
-	return cancelSubscription
+	return subscription.UUID(), cancelSubscription, true
 }
 
-func eoseWebsocketMsg(sub messages.SubscriptionID) []byte {
+func eoseWebsocketMsg(ctx context.Context, sub messages.SubscriptionID) []byte {
+	_, span := otel.Tracer("skyflow").Start(ctx, "handlers_req_eoseWebsocketMsg")
+	defer span.End()
 	bytes, err := json.Marshal([]any{"EOSE", sub})
 	if err != nil {
-		panic("failed to marshal EOSE message")
+		span.RecordError(fmt.Errorf("failed to marshal EOSE message: %w", err))
 	}
 	return bytes
 }
 func writeToConnection(ctx context.Context, msgChan <-chan []byte, connection *websocket.Conn) {
+	ctx, span := otel.Tracer("skyflow").Start(ctx, "handlers_req_writeToConnection")
+	defer span.End()
 	for {
 		select {
 		case <-ctx.Done():
@@ -98,7 +108,7 @@ func writeToConnection(ctx context.Context, msgChan <-chan []byte, connection *w
 		case eventMsg := <-msgChan:
 			err := connection.Write(ctx, websocket.MessageText, eventMsg)
 			if err != nil {
-				logrus.Error("websocket write error: " + err.Error())
+				span.RecordError(fmt.Errorf("websocket write error: %w", err))
 			}
 		}
 	}

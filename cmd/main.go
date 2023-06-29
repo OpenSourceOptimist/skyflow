@@ -67,7 +67,7 @@ func main() {
 		time.Sleep(time.Second)
 	}
 
-	ongoingSubscriptions := NewSyncMap[messages.SubscriptionUUID, messages.SubscriptionHandle]()
+	globalSubscriptions := NewSyncMap[messages.SubscriptionUUID, messages.SubscriptionHandle]()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -84,7 +84,7 @@ func main() {
 		defer func() {
 			conn.Close(websocket.StatusInternalError, "thanks, bye")
 		}()
-		subscriptionsAssosiatedWithRequest := make([]messages.SubscriptionUUID, 0)
+		sessionSubscriptions := NewSet[messages.SubscriptionUUID]()
 		rawWebsocketMessages := websocketMessages(ctx, conn)
 		parsedWebSocketMessages := slice.MapChan(ctx, rawWebsocketMessages, messages.ParseWebsocketMsg)
 		for msg := range parsedWebSocketMessages {
@@ -94,27 +94,33 @@ func main() {
 			switch msg.MsgType {
 			case messages.EVENT:
 				handlers.Event(
-					ctx, msg, eventDB, subscriptionDB, &ongoingSubscriptions,
+					ctx, msg, eventDB, subscriptionDB, &globalSubscriptions,
 				)
 			case messages.REQ:
-				cancelFunc := handlers.Req(
-					ctx, session, msg, eventDB, subscriptionDB, &ongoingSubscriptions, conn,
+				subUUID, cancelFunc, ok := handlers.Req(
+					ctx, session, msg, eventDB, subscriptionDB, &globalSubscriptions, conn,
 				)
-				defer cancelFunc()
+				defer cancelFunc() //nolint:staticcheck
+				if ok {
+					sessionSubscriptions.Add(subUUID)
+				}
 			case messages.CLOSE:
-				handlers.Close(
-					ctx, session, msg, subscriptionDB, &ongoingSubscriptions,
+				subUUID, ok := handlers.Close(
+					ctx, session, msg, subscriptionDB, &globalSubscriptions,
 				)
+				if ok {
+					sessionSubscriptions.Remove(subUUID)
+				}
 			}
 		}
 		conn.Close(websocket.StatusNormalClosure, "session cancelled")
-		for _, subscriptionID := range subscriptionsAssosiatedWithRequest {
-			subscriptionHandler, ok := ongoingSubscriptions.Load(subscriptionID)
+		for subscriptionUUID := range sessionSubscriptions {
+			subscriptionHandler, ok := globalSubscriptions.Load(subscriptionUUID)
 			if !ok {
 				continue
 			}
 			subscriptionHandler.Cancel()
-			ongoingSubscriptions.Delete(subscriptionID)
+			globalSubscriptions.Delete(subscriptionUUID)
 			err = subscriptionDB.DeleteOne(ctx, subscriptionHandler.Details)
 			if err != nil {
 				logrus.Error("mongo delete failed: " + err.Error())
@@ -147,6 +153,26 @@ func (m *SyncMap[K, T]) Load(key K) (T, bool) {
 
 func (m *SyncMap[K, T]) Store(key K, value T) {
 	m.syncMap.Store(key, value)
+}
+
+func NewSet[T comparable](values ...T) Set[T] {
+	res := make(Set[T], len(values))
+	for _, v := range values {
+		res.Add(v)
+	}
+	return res
+}
+
+type Set[T comparable] map[T]struct{}
+
+func (s *Set[T]) Add(t T) {
+	if _, ok := (*s)[t]; !ok {
+		(*s)[t] = struct{}{}
+	}
+}
+
+func (s *Set[T]) Remove(t T) {
+	delete((*s), t)
 }
 
 func websocketMessages(ctx context.Context, r *websocket.Conn) <-chan []byte {
