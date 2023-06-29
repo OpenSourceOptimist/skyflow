@@ -13,27 +13,27 @@ import (
 	"nhooyr.io/websocket"
 )
 
-type ConvertableToREQ interface {
+type ReqMsg interface {
 	AsREQ(messages.SessionID) (messages.Subscription, bool)
 }
-type SubcriptionHandleLoadStorer interface {
+type LoadStorer interface {
 	Load(messages.SubscriptionUUID) (messages.SubscriptionHandle, bool)
 	Store(messages.SubscriptionUUID, messages.SubscriptionHandle)
 }
-type DBInserter interface {
+type OneInserter interface {
 	InsertOne(context.Context, messages.Subscription) error
 }
-type DBFinder interface {
+type Finder interface {
 	Find(context.Context, primitive.M, ...store.FindOptions) <-chan event.StructuredEvent
 }
 
-func HandleREQ(
+func Req(
 	ctx context.Context,
 	session messages.SessionID,
-	msg ConvertableToREQ,
-	globalOngoingSubscriptions SubcriptionHandleLoadStorer,
-	subscritptionsDB DBInserter,
-	eventDB DBFinder,
+	msg ReqMsg,
+	eventDB Finder,
+	subscritptionsDB OneInserter,
+	globalOngoingSubscriptions LoadStorer,
 	conn *websocket.Conn,
 ) context.CancelFunc {
 	subscriptionCtx, cancelSubscription := context.WithCancel(ctx) //nolint:govet

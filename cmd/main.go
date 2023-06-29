@@ -55,10 +55,10 @@ func main() {
 	}
 	defer func() { _ = client.Disconnect(context.Background()) }()
 	logrus.Info("Mongo successfully connected")
-	eventDatabase := &store.Store[event.StructuredEvent]{
+	eventDB := &store.Store[event.StructuredEvent]{
 		Col: client.Database("skyflow").Collection("events"),
 	}
-	subscriptions := &store.Store[messages.Subscription]{
+	subscriptionDB := &store.Store[messages.Subscription]{
 		Col: client.Database("skyflow").Collection("subscriptions"),
 	}
 	for err != nil {
@@ -67,7 +67,7 @@ func main() {
 		time.Sleep(time.Second)
 	}
 
-	globalOngoingSubscriptions := NewSyncMap[messages.SubscriptionUUID, messages.SubscriptionHandle]()
+	ongoingSubscriptions := NewSyncMap[messages.SubscriptionUUID, messages.SubscriptionHandle]()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
@@ -93,40 +93,29 @@ func main() {
 			}
 			switch msg.MsgType {
 			case messages.EVENT:
-				handlers.HandleEventMessage(
-					ctx, msg, eventDatabase, subscriptions, &globalOngoingSubscriptions,
+				handlers.Event(
+					ctx, msg, eventDB, subscriptionDB, &ongoingSubscriptions,
 				)
 			case messages.REQ:
-				cancelFunc := handlers.HandleREQ(
-					ctx, session, msg, &globalOngoingSubscriptions, subscriptions, eventDatabase, conn,
+				cancelFunc := handlers.Req(
+					ctx, session, msg, eventDB, subscriptionDB, &ongoingSubscriptions, conn,
 				)
 				defer cancelFunc()
 			case messages.CLOSE:
-				subscriptionToClose, ok := msg.AsCLOSE(session)
-				if !ok {
-					continue
-				}
-				subscriptionHandle, ok := globalOngoingSubscriptions.Load(subscriptionToClose)
-				if !ok {
-					continue
-				}
-				err = subscriptions.DeleteOne(ctx, subscriptionHandle.Details)
-				if err != nil {
-					logrus.Error("mongo delete failed: " + err.Error())
-				}
-				subscriptionHandle.Cancel()
-				globalOngoingSubscriptions.Delete(subscriptionToClose)
+				handlers.Close(
+					ctx, session, msg, subscriptionDB, &ongoingSubscriptions,
+				)
 			}
 		}
 		conn.Close(websocket.StatusNormalClosure, "session cancelled")
 		for _, subscriptionID := range subscriptionsAssosiatedWithRequest {
-			subscriptionHandler, ok := globalOngoingSubscriptions.Load(subscriptionID)
+			subscriptionHandler, ok := ongoingSubscriptions.Load(subscriptionID)
 			if !ok {
 				continue
 			}
 			subscriptionHandler.Cancel()
-			globalOngoingSubscriptions.Delete(subscriptionID)
-			err = subscriptions.DeleteOne(ctx, subscriptionHandler.Details)
+			ongoingSubscriptions.Delete(subscriptionID)
+			err = subscriptionDB.DeleteOne(ctx, subscriptionHandler.Details)
 			if err != nil {
 				logrus.Error("mongo delete failed: " + err.Error())
 			}

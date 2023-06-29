@@ -28,7 +28,7 @@ type SubcriptionHandleLoader interface {
 	Load(messages.SubscriptionUUID) (messages.SubscriptionHandle, bool)
 }
 
-func HandleEventMessage(
+func Event(
 	ctx context.Context,
 	msg ConvertableToEvent,
 	eventsDB DbEventInserter,
