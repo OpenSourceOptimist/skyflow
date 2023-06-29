@@ -36,6 +36,7 @@ func Event(
 	ongoingSubscriptions SubcriptionHandleLoader,
 ) {
 	ctx, span := otel.Tracer("skyflow").Start(ctx, "HandleEventMessage")
+	defer span.End()
 	e, ok := msg.AsEvent()
 	if !ok {
 		span.RecordError(fmt.Errorf("message not convertible to event"))
