@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"os"
 	"strings"
@@ -16,7 +15,6 @@ import (
 	"github.com/OpenSourceOptimist/skyflow/internal/store"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.opentelemetry.io/otel"
@@ -99,51 +97,10 @@ func main() {
 					ctx, msg, eventDatabase, subscriptions, &globalOngoingSubscriptions,
 				)
 			case messages.REQ:
-				subscription, ok := msg.AsREQ(session)
-				if !ok {
-					continue
-				}
-				subscriptionCtx, cancelSubscription := context.WithCancel(ctx) //nolint:govet
-				defer cancelSubscription()                                     //nolint:staticcheck
-				if _, ok := globalOngoingSubscriptions.Load(subscription.UUID()); ok {
-					continue
-				}
-				err = subscriptions.InsertOne(ctx, subscription)
-				if err != nil {
-					logrus.Error("mongo error on inserting supscription: " + err.Error())
-				}
-				newEvents := make(chan event.Event)
-				globalOngoingSubscriptions.Store(
-					subscription.UUID(),
-					messages.SubscriptionHandle{
-						Ctx:       subscriptionCtx,
-						Cancel:    cancelSubscription,
-						NewEvents: newEvents,
-						Details:   subscription,
-					},
+				cancelFunc := handlers.HandleREQ(
+					ctx, session, msg, &globalOngoingSubscriptions, subscriptions, eventDatabase, conn,
 				)
-				eventsPerFilter := slice.Map(subscription.Filters,
-					func(filter messages.Filter) <-chan event.StructuredEvent {
-						return eventDatabase.Find(
-							subscriptionCtx,
-							messages.EventFilter(filter),
-							store.FindOptions{
-								Sort:  primitive.D{{Key: "event.created_at", Value: -1}},
-								Limit: filter.Limit,
-							},
-						)
-					})
-				dbEventsStructured := slice.Merge(subscriptionCtx, eventsPerFilter...)
-				dbEvents := slice.MapChan(subscriptionCtx, dbEventsStructured, event.UnStructure)
-				dbEventsAsMessages := slice.MapChanSkipErrors(
-					ctx, dbEvents, eventToWebsocketMsg(subscription.ID))
-				newEventsAsMessages := slice.MapChanSkipErrors(
-					ctx, newEvents, eventToWebsocketMsg(subscription.ID))
-				subscriptionEvents := slice.ChanConcatenate(
-					dbEventsAsMessages,
-					slice.AsClosedChan(eoseWebsocketMsg(subscription.ID)),
-					newEventsAsMessages)
-				go writeToConnection(subscriptionCtx, subscriptionEvents, conn)
+				defer cancelFunc()
 			case messages.CLOSE:
 				subscriptionToClose, ok := msg.AsCLOSE(session)
 				if !ok {
@@ -176,38 +133,6 @@ func main() {
 		}
 	})
 	logrus.Info("server stopping: " + http.ListenAndServe(":80", handler).Error())
-}
-
-func eoseWebsocketMsg(sub messages.SubscriptionID) []byte {
-	bytes, err := json.Marshal([]any{"EOSE", sub})
-	if err != nil {
-		panic("failed to marshal EOSE message")
-	}
-	return bytes
-}
-
-func writeToConnection(ctx context.Context, msgChan <-chan []byte, connection *websocket.Conn) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case eventMsg := <-msgChan:
-			err := connection.Write(ctx, websocket.MessageText, eventMsg)
-			if err != nil {
-				logrus.Error("websocket write error: " + err.Error())
-			}
-		}
-	}
-}
-
-func eventToWebsocketMsg(sub messages.SubscriptionID) func(event.Event) ([]byte, error) {
-	return func(e event.Event) ([]byte, error) {
-		eventMsg, err := json.Marshal([]any{"EVENT", sub, e})
-		if err != nil {
-			return nil, err
-		}
-		return eventMsg, nil
-	}
 }
 
 func NewSyncMap[K comparable, T any]() SyncMap[K, T] {
