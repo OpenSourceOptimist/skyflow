@@ -21,8 +21,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/trace"
 
-	// "go.opentelemetry.io/otel/trace"
-
+	"github.com/rs/cors"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"nhooyr.io/websocket"
@@ -69,7 +68,7 @@ func main() {
 
 	globalSubscriptions := NewSyncMap[messages.SubscriptionUUID, messages.SubscriptionHandle]()
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		ctx, span := otel.Tracer("skyflow").Start(ctx, "session")
 		defer span.End()
@@ -127,6 +126,7 @@ func main() {
 			}
 		}
 	})
+	handler = cors.AllowAll().Handler(handler)
 	logrus.Info("server stopping: " + http.ListenAndServe(":80", handler).Error())
 }
 
