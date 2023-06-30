@@ -71,7 +71,7 @@ func TestMain(m *testing.M) {
 
 	fmt.Println("building and starting skyflow container")
 	_ = pool.RemoveContainerByName("test_skyflow")
-	_, err = pool.BuildAndRunWithOptions("./Dockerfile", &dockertest.RunOptions{
+	_, err = pool.BuildAndRunWithOptions("Dockerfile", &dockertest.RunOptions{
 		Name: "test_skyflow",
 		PortBindings: map[docker.Port][]docker.PortBinding{
 			"80/tcp": {{HostPort: "80"}},
