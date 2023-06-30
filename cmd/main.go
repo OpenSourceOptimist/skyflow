@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"os"
 	"strings"
@@ -10,15 +9,22 @@ import (
 	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/internal/event"
-	"github.com/OpenSourceOptimist/skyflow/internal/log"
+	"github.com/OpenSourceOptimist/skyflow/internal/handlers"
 	"github.com/OpenSourceOptimist/skyflow/internal/messages"
 	"github.com/OpenSourceOptimist/skyflow/internal/slice"
 	"github.com/OpenSourceOptimist/skyflow/internal/store"
 	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/trace"
+
+	// "go.opentelemetry.io/otel/trace"
+
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"nhooyr.io/websocket"
 )
 
@@ -27,192 +33,101 @@ func main() {
 	logrus.SetOutput(os.Stdout)
 	logrus.Info("Starting Skyflow")
 	mongoUri := os.Getenv("MONGODB_URI")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	exporter, err := otlptrace.New(ctx,
+		otlptracehttp.NewClient(
+			otlptracehttp.WithEndpoint("tempo:4318"),
+			otlptracehttp.WithInsecure(),
+		),
+	)
+	if err != nil {
+		logrus.Info("no tracing, you are flying blind")
+	}
+	traceProvider := trace.NewTracerProvider(
+		trace.WithBatcher(exporter),
+	)
+	defer func() { _ = traceProvider.Shutdown(context.Background()) }()
+	otel.SetTracerProvider(traceProvider)
 	client, err := mongo.Connect(context.Background(), options.Client().ApplyURI(mongoUri))
 	if err != nil {
 		logrus.Fatal("Mongo connection failed")
 	}
 	defer func() { _ = client.Disconnect(context.Background()) }()
 	logrus.Info("Mongo successfully connected")
-	eventDatabase := &store.Store[event.StructuredEvent]{
+	eventDB := &store.Store[event.StructuredEvent]{
 		Col: client.Database("skyflow").Collection("events"),
 	}
-	subscriptions := &store.Store[messages.Subscription]{
+	subscriptionDB := &store.Store[messages.Subscription]{
 		Col: client.Database("skyflow").Collection("subscriptions"),
 	}
-	ctx := context.Background()
 	for err != nil {
 		err := client.Ping(ctx, nil)
 		logrus.Error("mongo ping", "error", err.Error())
 		time.Sleep(time.Second)
 	}
 
-	globalOngoingSubscriptions := NewSyncMap[messages.SubscriptionUUID, SubscriptionHandle]()
+	globalSubscriptions := NewSyncMap[messages.SubscriptionUUID, messages.SubscriptionHandle]()
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		ctx, span := otel.Tracer("skyflow").Start(ctx, "session")
+		defer span.End()
+		logrus.Info("new connection: " + span.SpanContext().TraceID().String())
 		session := messages.SessionID(uuid.NewString())
-		l := &log.Logger{Session: slice.Prefix(string(session), 5)}
-		l.Debug("handling new request")
+		span.SetAttributes(attribute.String("sessionId", string(session)))
 		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			l.Error("error setting up websocket", "error", err)
 			return
 		}
 		defer func() {
-			l.Debug("websocket closed")
 			conn.Close(websocket.StatusInternalError, "thanks, bye")
 		}()
-		ctx := r.Context()
-		subscriptionsAssosiatedWithRequest := make([]messages.SubscriptionUUID, 0)
-		rawWebsocketMessages := websocketMessages(ctx, conn, l)
+		sessionSubscriptions := NewSet[messages.SubscriptionUUID]()
+		rawWebsocketMessages := websocketMessages(ctx, conn)
 		parsedWebSocketMessages := slice.MapChan(ctx, rawWebsocketMessages, messages.ParseWebsocketMsg)
 		for msg := range parsedWebSocketMessages {
-			l.IncrementSession()
 			if msg.Err != nil {
-				l.Error("error reading websocket message", "error", msg.Err)
 				continue
 			}
 			switch msg.MsgType {
 			case messages.EVENT:
-				e, ok := msg.AsEvent()
-				if !ok {
-					l.Error("not event", "msg", msg)
-					continue
-				}
-				l.Debug("event over websocket", "eID", e.ID)
-				err = eventDatabase.InsertOne(ctx, event.Structure(e))
-				if err != nil {
-					l.Error("failed to insert event in DB", "error", err)
-				}
-				for subscription := range subscriptions.Find(ctx, messages.SubscriptionFilter(e)) {
-					handle, ok := globalOngoingSubscriptions.Load(subscription.UUID())
-					if !ok {
-						l.Error("subscription not in global map", "subID", subscription.ID)
-						continue
-					}
-					l.Debug("following up", "subID", subscription.ID, "eID", e.ID)
-					slice.AsyncWrite(handle.Ctx, handle.NewEvents, e)
-				}
-			case messages.REQ:
-				subscription, ok := msg.AsREQ(session)
-				if !ok {
-					l.Error("not REQ", "msg", msg)
-				}
-				l.Debug("subscription over websocket", "subscription", subscription)
-				subscriptionCtx, cancelSubscription := context.WithCancel(ctx) //nolint:govet
-				defer cancelSubscription()                                     //nolint:staticcheck
-				if _, ok := globalOngoingSubscriptions.Load(subscription.UUID()); ok {
-					continue
-				}
-				err = subscriptions.InsertOne(ctx, subscription)
-				if err != nil {
-					l.Error("failed to insert subscription in DB", "error", err)
-				}
-				newEvents := make(chan event.Event)
-				globalOngoingSubscriptions.Store(
-					subscription.UUID(),
-					SubscriptionHandle{
-						Ctx:       subscriptionCtx,
-						Cancel:    cancelSubscription,
-						NewEvents: newEvents,
-						Details:   subscription,
-					},
+				handlers.Event(
+					ctx, msg, eventDB, subscriptionDB, &globalSubscriptions,
 				)
-				eventsPerFilter := slice.Map(subscription.Filters,
-					func(filter messages.Filter) <-chan event.StructuredEvent {
-						return eventDatabase.Find(
-							subscriptionCtx,
-							messages.EventFilter(filter),
-							store.FindOptions{
-								Sort:  primitive.D{{Key: "event.created_at", Value: -1}},
-								Limit: filter.Limit,
-							},
-						)
-					})
-				dbEventsStructured := slice.Merge(subscriptionCtx, eventsPerFilter...)
-				dbEvents := slice.MapChan(subscriptionCtx, dbEventsStructured, event.UnStructure)
-				dbEventsAsMessages := slice.MapChanSkipErrors(
-					ctx, dbEvents, eventToWebsocketMsg(subscription.ID))
-				newEventsAsMessages := slice.MapChanSkipErrors(
-					ctx, newEvents, eventToWebsocketMsg(subscription.ID))
-				subscriptionEvents := slice.ChanConcatenate(
-					dbEventsAsMessages,
-					slice.AsClosedChan(eoseWebsocketMsg(subscription.ID)),
-					newEventsAsMessages)
-				go writeToConnection(subscriptionCtx, subscriptionEvents, conn, l)
+			case messages.REQ:
+				subUUID, cancelFunc, ok := handlers.Req(
+					ctx, session, msg, eventDB, subscriptionDB, &globalSubscriptions, conn,
+				)
+				defer cancelFunc() //nolint:staticcheck
+				if ok {
+					sessionSubscriptions.Add(subUUID)
+				}
 			case messages.CLOSE:
-				subscriptionToClose, ok := msg.AsCLOSE(session)
-				if !ok {
-					continue
+				subUUID, ok := handlers.Close(
+					ctx, session, msg, subscriptionDB, &globalSubscriptions,
+				)
+				if ok {
+					sessionSubscriptions.Remove(subUUID)
 				}
-				l.Debug("recived close over websocket", "subID", subscriptionToClose)
-				subscriptionHandle, ok := globalOngoingSubscriptions.Load(subscriptionToClose)
-				if !ok {
-					continue
-				}
-				err = subscriptions.DeleteOne(ctx, subscriptionHandle.Details)
-				if err != nil {
-					l.Error("failed to delete subscription", "error", err)
-				}
-				subscriptionHandle.Cancel()
-				globalOngoingSubscriptions.Delete(subscriptionToClose)
 			}
 		}
-		l.Info("closing websocket")
 		conn.Close(websocket.StatusNormalClosure, "session cancelled")
-		for _, subscriptionID := range subscriptionsAssosiatedWithRequest {
-			subscriptionHandler, ok := globalOngoingSubscriptions.Load(subscriptionID)
+		for subscriptionUUID := range sessionSubscriptions {
+			subscriptionHandler, ok := globalSubscriptions.Load(subscriptionUUID)
 			if !ok {
 				continue
 			}
 			subscriptionHandler.Cancel()
-			globalOngoingSubscriptions.Delete(subscriptionID)
-			err = subscriptions.DeleteOne(ctx, subscriptionHandler.Details)
+			globalSubscriptions.Delete(subscriptionUUID)
+			err = subscriptionDB.DeleteOne(ctx, subscriptionHandler.Details)
 			if err != nil {
-				l.Error("failed to delete subscription", "error", err)
+				logrus.Error("mongo delete failed: " + err.Error())
 			}
 		}
 	})
 	logrus.Info("server stopping: " + http.ListenAndServe(":80", handler).Error())
-}
-
-func eoseWebsocketMsg(sub messages.SubscriptionID) []byte {
-	bytes, err := json.Marshal([]any{"EOSE", sub})
-	if err != nil {
-		panic("failed to marshal EOSE message")
-	}
-	return bytes
-}
-
-func writeToConnection(ctx context.Context, msgChan <-chan []byte, connection *websocket.Conn, l *log.Logger) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case eventMsg := <-msgChan:
-			err := connection.Write(ctx, websocket.MessageText, eventMsg)
-			if err != nil {
-				l.Error("write error", "error", err)
-			}
-		}
-	}
-}
-
-func eventToWebsocketMsg(sub messages.SubscriptionID) func(event.Event) ([]byte, error) {
-	return func(e event.Event) ([]byte, error) {
-		eventMsg, err := json.Marshal([]any{"EVENT", sub, e})
-		if err != nil {
-			return nil, err
-		}
-		return eventMsg, nil
-	}
-}
-
-type SubscriptionHandle struct {
-	Ctx       context.Context
-	Cancel    func()
-	NewEvents chan<- event.Event
-	Details   messages.Subscription
 }
 
 func NewSyncMap[K comparable, T any]() SyncMap[K, T] {
@@ -240,7 +155,27 @@ func (m *SyncMap[K, T]) Store(key K, value T) {
 	m.syncMap.Store(key, value)
 }
 
-func websocketMessages(ctx context.Context, r *websocket.Conn, l *log.Logger) <-chan []byte {
+func NewSet[T comparable](values ...T) Set[T] {
+	res := make(Set[T], len(values))
+	for _, v := range values {
+		res.Add(v)
+	}
+	return res
+}
+
+type Set[T comparable] map[T]struct{}
+
+func (s *Set[T]) Add(t T) {
+	if _, ok := (*s)[t]; !ok {
+		(*s)[t] = struct{}{}
+	}
+}
+
+func (s *Set[T]) Remove(t T) {
+	delete((*s), t)
+}
+
+func websocketMessages(ctx context.Context, r *websocket.Conn) <-chan []byte {
 	result := make(chan []byte)
 	go func() {
 		var wg sync.WaitGroup
@@ -255,7 +190,6 @@ func websocketMessages(ctx context.Context, r *websocket.Conn, l *log.Logger) <-
 			}
 			socketMsgType, data, err := r.Read(ctx)
 			if err != nil {
-				l.Debug("read error", "error", err)
 				if strings.Contains(err.Error(), "WebSocket closed") {
 					return
 				}

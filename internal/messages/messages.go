@@ -1,6 +1,7 @@
 package messages
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -42,6 +43,13 @@ func (e Subscription) UniqueMatch() primitive.M {
 		primitive.M{"id": e.ID},
 		primitive.M{"session": e.SessionID},
 	}}
+}
+
+type SubscriptionHandle struct {
+	Ctx       context.Context
+	Cancel    func()
+	NewEvents chan<- event.Event
+	Details   Subscription
 }
 
 type M primitive.M

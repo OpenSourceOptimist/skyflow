@@ -7,8 +7,6 @@ COPY go.mod ./
 COPY go.sum ./
 COPY vendor ./vendor
 
-RUN ls
-
 RUN go build -o skyflow cmd/main.go
 
 FROM registry.fedoraproject.org/fedora-minimal:37

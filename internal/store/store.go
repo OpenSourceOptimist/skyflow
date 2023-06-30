@@ -6,6 +6,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.opentelemetry.io/otel"
 )
 
 type Collection interface {
@@ -27,6 +28,8 @@ type Store[T HasUniqueID] struct {
 }
 
 func (s *Store[T]) InsertOne(ctx context.Context, e T) error {
+	ctx, span := otel.Tracer("skyflow").Start(ctx, "store_InsertOne")
+	defer span.End()
 	_, err := s.Col.InsertOne(ctx, e)
 	return err
 }
@@ -37,6 +40,8 @@ type FindOptions struct {
 }
 
 func (s *Store[T]) Find(ctx context.Context, filter primitive.M, opts ...FindOptions) <-chan T {
+	ctx, span := otel.Tracer("skyflow").Start(ctx, "store_Find")
+	defer span.End()
 	findOpts := options.Find()
 	for _, opt := range opts {
 		if opt.Sort != nil {
@@ -56,6 +61,8 @@ func (s *Store[T]) Find(ctx context.Context, filter primitive.M, opts ...FindOpt
 }
 
 func (s *Store[T]) DeleteOne(ctx context.Context, t T) error {
+	ctx, span := otel.Tracer("skyflow").Start(ctx, "store_DeleteOne")
+	defer span.End()
 	_, err := s.Col.DeleteOne(ctx, t.UniqueMatch())
 	return err
 }
