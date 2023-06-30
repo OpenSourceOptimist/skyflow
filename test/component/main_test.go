@@ -15,6 +15,8 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	code := 1
+	defer func() { os.Exit(code) }()
 	fmt.Println("starting component test")
 	rURI := flag.String("relayURI", "", "relay to run test against, if omitted it starts up a relay locally")
 	flag.Parse()
@@ -92,9 +94,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	fmt.Println("running tests")
-	code := m.Run()
-	fmt.Println("cleaning up")
-	os.Exit(code)
+	code = m.Run()
 }
 
 type ErrTestingT struct {
