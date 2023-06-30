@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/nbd-wtf/go-nostr v0.13.2
 	github.com/ory/dockertest/v3 v3.9.1
+	github.com/rs/cors v1.9.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.8.3
 	go.mongodb.org/mongo-driver v1.11.2
