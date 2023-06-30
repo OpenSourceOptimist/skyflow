@@ -19,6 +19,7 @@ func TestMain(m *testing.M) {
 	defer func() { os.Exit(code) }()
 	fmt.Println("starting component test")
 	rURI := flag.String("relayURI", "", "relay to run test against, if omitted it starts up a relay locally")
+	dockerfilePath := flag.String("dockerfilePath", "./Dockerfile", "relay to run test against, if omitted it starts up a relay locally")
 	flag.Parse()
 	relayURI := *rURI
 	if relayURI != "" {
@@ -71,7 +72,7 @@ func TestMain(m *testing.M) {
 
 	fmt.Println("building and starting skyflow container")
 	_ = pool.RemoveContainerByName("test_skyflow")
-	_, err = pool.BuildAndRunWithOptions("Dockerfile", &dockertest.RunOptions{
+	_, err = pool.BuildAndRunWithOptions(*dockerfilePath, &dockertest.RunOptions{
 		Name: "test_skyflow",
 		PortBindings: map[docker.Port][]docker.PortBinding{
 			"80/tcp": {{HostPort: "80"}},
