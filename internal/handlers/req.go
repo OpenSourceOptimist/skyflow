@@ -106,6 +106,7 @@ func writeToConnection(ctx context.Context, msgChan <-chan []byte, connection *w
 		case <-ctx.Done():
 			return
 		case eventMsg := <-msgChan:
+			span.AddEvent("msg on connection")
 			err := connection.Write(ctx, websocket.MessageText, eventMsg)
 			if err != nil {
 				span.RecordError(fmt.Errorf("websocket write error: %w", err))

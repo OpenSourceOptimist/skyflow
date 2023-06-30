@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -88,7 +89,7 @@ func main() {
 		parsedWebSocketMessages := slice.MapChan(ctx, rawWebsocketMessages, messages.ParseWebsocketMsg)
 		for msg := range parsedWebSocketMessages {
 			if msg.Err != nil {
-				continue
+				span.RecordError(fmt.Errorf("parsing websocket message: %w", err))
 			}
 			switch msg.MsgType {
 			case messages.EVENT:
@@ -110,6 +111,9 @@ func main() {
 				if ok {
 					sessionSubscriptions.Remove(subUUID)
 				}
+			default:
+				span.RecordError(fmt.Errorf("unsupported msg type: " + string(msg.MsgType)))
+
 			}
 		}
 		conn.Close(websocket.StatusNormalClosure, "session cancelled")
