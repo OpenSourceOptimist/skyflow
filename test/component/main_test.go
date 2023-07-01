@@ -83,6 +83,7 @@ func TestMain(m *testing.M) {
 	})
 	if err != nil {
 		fmt.Println("pool.BuildAndRun: " + err.Error())
+		fmt.Println("dockerfilePath: " + *dockerfilePath)
 		return
 	}
 	err = pool.Retry(func() error {
