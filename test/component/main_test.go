@@ -68,7 +68,7 @@ func TestMain(m *testing.M) {
 
 	fmt.Println("building and starting skyflow container")
 	_ = pool.RemoveContainerByName("test_skyflow")
-	_, err = pool.BuildAndRunWithOptions(*dockerfilePath, &dockertest.RunOptions{
+	skyflow, err := pool.BuildAndRunWithOptions(*dockerfilePath, &dockertest.RunOptions{
 		Name: "test_skyflow",
 		PortBindings: map[docker.Port][]docker.PortBinding{
 			"80/tcp": {{HostPort: "80"}},
@@ -82,6 +82,7 @@ func TestMain(m *testing.M) {
 		fmt.Println("dockerfilePath: " + *dockerfilePath)
 		return
 	}
+	help.SetDefaultURI(skyflow.GetBoundIP("80/tcp") + ":80")
 	pool.MaxWait = 10 * time.Second
 	_ = pool.Retry(func() error {
 		t := ErrTestingT{}
