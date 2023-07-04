@@ -82,7 +82,7 @@ func TestMain(m *testing.M) {
 		fmt.Println("dockerfilePath: " + *dockerfilePath)
 		return
 	}
-	help.SetDefaultURI("ws://localhost:80")
+	//help.SetDefaultURI("ws://localhost:80")
 	pool.MaxWait = 10 * time.Second
 	_ = pool.Retry(func() error {
 		t := ErrTestingT{}
