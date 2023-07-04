@@ -55,7 +55,7 @@ func NewSocket(ctx context.Context, t require.TestingT, opts ...SocketOpts) (Msg
 	conn, resp, err := websocket.Dial(ctx, uri, &websocket.DialOptions{CompressionMode: websocket.CompressionDisabled})
 	require.NoError(t, err, "websocket dial error")
 	if resp == nil {
-		t.FailNow()
+		t.Errorf("nil websocket dial response: %w", err)
 		return MsgWriter{}, nil, func() {}
 	}
 	require.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode, "handshake status")
