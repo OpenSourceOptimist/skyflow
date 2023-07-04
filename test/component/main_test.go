@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/test/help"
 	"github.com/ory/dockertest/v3"
@@ -19,23 +20,19 @@ func TestMain(m *testing.M) {
 	defer func() { os.Exit(code) }()
 	fmt.Println("starting component test")
 	rURI := flag.String("relayURI", "", "relay to run test against, if omitted it starts up a relay locally")
+	dockerfilePath := flag.String("dockerfilePath", "./Dockerfile", "relay to run test against, if omitted it starts up a relay locally")
 	flag.Parse()
 	relayURI := *rURI
 	if relayURI != "" {
 		help.SetDefaultURI(relayURI)
-		fmt.Println("running tests")
-		code := m.Run()
-		fmt.Println("cleaning up")
-		os.Exit(code)
+		code = m.Run()
 	}
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		fmt.Println("dockertest.NewPool: " + err.Error())
 		return
 	}
-
 	fmt.Println("starting mongo")
-
 	_ = pool.RemoveContainerByName("test_db")
 	mongoResource, err := pool.RunWithOptions(
 		&dockertest.RunOptions{
@@ -71,7 +68,7 @@ func TestMain(m *testing.M) {
 
 	fmt.Println("building and starting skyflow container")
 	_ = pool.RemoveContainerByName("test_skyflow")
-	_, err = pool.BuildAndRunWithOptions("./Dockerfile", &dockertest.RunOptions{
+	skyflow, err := pool.BuildAndRunWithOptions(*dockerfilePath, &dockertest.RunOptions{
 		Name: "test_skyflow",
 		PortBindings: map[docker.Port][]docker.PortBinding{
 			"80/tcp": {{HostPort: "80"}},
@@ -82,16 +79,21 @@ func TestMain(m *testing.M) {
 	})
 	if err != nil {
 		fmt.Println("pool.BuildAndRun: " + err.Error())
+		fmt.Println("dockerfilePath: " + *dockerfilePath)
 		return
 	}
-	err = pool.Retry(func() error {
+	help.SetDefaultURI("ws://" + skyflow.Container.NetworkSettings.IPAddress + ":80")
+	pool.MaxWait = 10 * time.Second
+	_ = pool.Retry(func() error {
 		t := ErrTestingT{}
 		_, _, closer := help.NewSocket(ctx, &t)
 		closer()
+		err = t.err
 		return t.err
 	})
 	if err != nil {
-		panic(err)
+		fmt.Println("failed to open connection to skyflow: " + err.Error())
+		return
 	}
 	fmt.Println("running tests")
 	code = m.Run()
