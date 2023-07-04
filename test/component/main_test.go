@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/OpenSourceOptimist/skyflow/test/help"
 	"github.com/ory/dockertest/v3"
@@ -81,14 +82,17 @@ func TestMain(m *testing.M) {
 		fmt.Println("dockerfilePath: " + *dockerfilePath)
 		return
 	}
-	err = pool.Retry(func() error {
+	pool.MaxWait = 10 * time.Second
+	_ = pool.Retry(func() error {
 		t := ErrTestingT{}
 		_, _, closer := help.NewSocket(ctx, &t)
 		closer()
+		err = t.err
 		return t.err
 	})
 	if err != nil {
-		fmt.Println("open socket: " + err.Error())
+		fmt.Println("failed to open connection to skyflow: " + err.Error())
+		return
 	}
 	fmt.Println("running tests")
 	code = m.Run()

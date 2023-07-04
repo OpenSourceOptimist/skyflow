@@ -28,7 +28,7 @@ type SocketOpts struct {
 	URI string
 }
 
-var defaultURI string = "ws://localhost:80"
+var defaultURI string = "ws://127.0.0.1:80"
 
 func SetDefaultURI(uri string) {
 	defaultURI = uri
