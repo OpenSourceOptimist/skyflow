@@ -24,19 +24,14 @@ func TestMain(m *testing.M) {
 	relayURI := *rURI
 	if relayURI != "" {
 		help.SetDefaultURI(relayURI)
-		fmt.Println("running tests")
-		code := m.Run()
-		fmt.Println("cleaning up")
-		os.Exit(code)
+		code = m.Run()
 	}
 	pool, err := dockertest.NewPool("")
 	if err != nil {
 		fmt.Println("dockertest.NewPool: " + err.Error())
 		return
 	}
-
 	fmt.Println("starting mongo")
-
 	_ = pool.RemoveContainerByName("test_db")
 	mongoResource, err := pool.RunWithOptions(
 		&dockertest.RunOptions{
@@ -93,7 +88,7 @@ func TestMain(m *testing.M) {
 		return t.err
 	})
 	if err != nil {
-		panic(err)
+		fmt.Println("open socket: " + err.Error())
 	}
 	fmt.Println("running tests")
 	code = m.Run()
