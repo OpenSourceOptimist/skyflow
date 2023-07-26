@@ -38,6 +38,8 @@ services:
     expose:
       - 27017
     restart: unless-stopped
+    volumes:
+      - mongo_db_data:/data/db
   caddy:
     build:
       context: ./caddy
@@ -47,6 +49,9 @@ services:
      - ./caddy_data:/data
      - ./caddy_config:/config
     restart: unless-stopped
+
+volumes:
+  mongo_db_data:
 ```
 
 Create a folder named `caddy` and put the Dockerfile and Caddyfile in
